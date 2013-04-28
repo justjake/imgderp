@@ -1,49 +1,28 @@
-package main
+package ui
 
 import (
     "fmt"
     "io"
     "bufio"
-    "os"
     "os/exec"
     "strings"
+    "github.com/justjake/imgtagger"
 )
 
-const (
-    DefaultLibraryPath = "img_lib.dat"
-)
 
-type Tag struct {
-    Images []*Image
-    Title string
+type settings struct {
+    targetLibrary *imgtagger.Library
 }
 
-type Library struct {
-    Tags  []*Tag
-    Images  []*Image
-}
-
-type Image struct {
-    Title string
-    Filename string
-    Tags []*Tag
+var s = settings{}
+func SetTargetLibrary (lib *imgtagger.Library) {
+    s.targetLibrary = lib
 }
 
 type Error string
 func (e Error) Error() string {
     return string(e)
 }
-
-
-var CurrentLibrary Library
-// bad idea: use closures instead
-//type Command int
-//const (
-    //Tag Command = iota
-    //SearchName
-    //SearchTag
-//)
-
 
 // Commands
 type Command func(io.Writer, []string) error
@@ -53,7 +32,7 @@ type Command func(io.Writer, []string) error
 func NeedsMoreThan(min int, c Command) Command {
     return func (o io.Writer, p []string) error {
         if l := len(p); l < min {
-            fmt.Fprintf("This command needs more than %d args. You passed %d.", min, l)
+            fmt.Fprintf(o, "This command needs more than %d args. You passed %d.", min, l)
             return nil
         }
         return c(o, p)
@@ -69,8 +48,8 @@ var (
     }
 
     ListCommand = func(o io.Writer, p []string) error {
-        if len(CurrentLibrary.Images) > 0 {
-            for _, img := range CurrentLibrary.Images {
+        if len(s.targetLibrary.Images) > 0 {
+            for _, img := range s.targetLibrary.Images {
                 fmt.Fprintln(o, img.Title)
             }
         } else {
@@ -80,23 +59,9 @@ var (
     }
 
     AddCommand = NeedsMoreThan(2, func(o io.Writer, p []string) error {
-
+        return nil
     })
 )
-
-
-// save and load the library
-// func loadLibrary(path string) Library
-// func (lib *Library) save() error
-
-// pass something to exit the gorgram
-var Commands = map[string]Command{
-    "quit": QuitCommand,
-    "exit": QuitCommand,
-
-    "ls":   ListCommand,
-    "list": ListCommand,
-}
 
 // runs a system command, handling the zany errors and things by doing
 // UI stuff.
@@ -135,7 +100,7 @@ func ReadlineWords(reader *bufio.Reader) (words []string, err error) {
 
 
 // runs on its own thread for maximum responsiveness
-func ui(in io.Reader, out io.Writer, prompt string, commands map[string]Command) {
+func Run(in io.Reader, out io.Writer, prompt string, commands map[string]Command) {
     // set up buffered input
     reader := bufio.NewReader(in)
 
@@ -167,10 +132,4 @@ func ui(in io.Reader, out io.Writer, prompt string, commands map[string]Command)
             fmt.Fprintf(out, "Command not found: %s\n", words[0])
         }
     }
-}
-
-
-
-func main() {
-    ui(os.Stdin, os.Stdout, "img> ", Commands)
 }
