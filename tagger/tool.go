@@ -2,7 +2,6 @@ package main
 
 import (
     "os"
-    "fmt"
     "github.com/justjake/imgtagger"
     "github.com/justjake/imgtagger/ui"
 )
