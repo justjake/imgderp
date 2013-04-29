@@ -6,16 +6,16 @@ import (
     "bufio"
     "os/exec"
     "strings"
-    "github.com/justjake/imgtagger"
+    it "github.com/justjake/imgtagger"
 )
 
 
 type settings struct {
-    targetLibrary *imgtagger.Library
+    targetLibrary *it.Library
 }
 
 var s = settings{}
-func SetTargetLibrary (lib *imgtagger.Library) {
+func SetTargetLibrary (lib *it.Library) {
     s.targetLibrary = lib
 }
 
@@ -58,9 +58,32 @@ var (
         return nil // no errors
     }
 
-    AddCommand = NeedsMoreThan(2, func(o io.Writer, p []string) error {
+    // adds an image to the library
+    AddCommand = func(o io.Writer, p []string) error {
+        // params
+        if len(p) < 2 {
+            fmt.Fprintf(o, "Add requires at least 2 parameters.\n")
+        fn, title, tagNames := p[0], p[1], p[2:]
+
+        // get tags or create them
+        tags := make([]*it.Tag, len(tagNames))
+        for i, tn := range tagNames {
+            tag, ok := s.targetLibrary.Tags[tn]
+            if ! ok {
+                tag, _ = s.targetLibrary.NewTag(tn, []*it.Image{})
+            }
+            tags[i] = tag
+        }
+
+        _, err := s.targetLibrary.NewImage(fn, title, tags)
+        if err != nil {
+            fmt.Fprintln(o, err)
+        }
+
+        fmt.Fprintf(o, "Added new image \"%s\" (%s) to library\n", title, fn)
         return nil
-    })
+    }
+
 )
 
 // runs a system command, handling the zany errors and things by doing
