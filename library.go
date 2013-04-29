@@ -30,6 +30,15 @@ type saveableImage struct {
     Title string
 }
 
+type saveableTag struct {
+    Title string
+    Images map[string]*saveableImage
+}
+
+type saveableLibrary struct {
+    Images map[string]*saveableImage
+    Tags   map[string]*saveableTag
+}
 
 // All manipulation occurs on the Library
 // for centralized data syncing
@@ -40,7 +49,7 @@ func (l *Library) NewTag(t string, imgs []*Image) (tag *Tag, err error) {
         return nil, fmt.Errorf("Duplicate tag name: %s", t)
     }
 
-    return &Tag{Title: t}, nil
+    return &Tag{t, make(map[string]*Image, 5)}, nil
 }
 
 func (l *Library) NewImage(fn string, t string, tags []*Tag) (img *Image, err error) {
@@ -50,10 +59,13 @@ func (l *Library) NewImage(fn string, t string, tags []*Tag) (img *Image, err er
         return nil, fmt.Errorf("Duplicate filename: %s", fn)
     }
 
-    img = &Image{Filename: fn, Title: t}
+    img = &Image{Filename: fn, Title: t, Tags: make(map[string]*Tag, 5)}
     for _, tag := range tags {
         img.Tags[tag.Title] = tag
+        tag.Images[fn] = img
     }
+
+    l.Images[fn] = img
 
     return
 }
@@ -73,6 +85,15 @@ func (l *Library) Save(fn string) error {
     }
     return nil
 }
+
+func NewLibrary() (lib *Library) {
+    lib = &Library{
+        Images: make(map[string]*Image, 10),
+        Tags:   make(map[string]*Tag,   10),
+    }
+    return
+}
+
 
 // Load a gob-dumped library from a file
 func LoadLibrary (fn string) (lib *Library, err error) {

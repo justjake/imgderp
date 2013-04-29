@@ -2,6 +2,7 @@ package main
 
 import (
     "os"
+    "fmt"
     "github.com/justjake/imgtagger"
     "github.com/justjake/imgtagger/ui"
 )
@@ -25,6 +26,22 @@ var Commands = map[string]ui.Command{
 
 
 func main() {
+    CurrentLibrary, err := imgtagger.LoadLibrary(DefaultLibraryPath)
+    if err != nil {
+        CurrentLibrary = imgtagger.NewLibrary()
+        err = CurrentLibrary.Save(DefaultLibraryPath)
+        if err != nil {
+            fmt.Println(err)
+            return
+        }
+    } 
+
     ui.SetTargetLibrary(CurrentLibrary)
     ui.Run(os.Stdin, os.Stdout, "img> ", Commands)
+
+    // save
+    err = CurrentLibrary.Save(DefaultLibraryPath)
+    if err != nil {
+        fmt.Printf("Library save error: %s", err)
+    }
 }
