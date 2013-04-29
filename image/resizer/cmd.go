@@ -44,6 +44,13 @@ func main() {
     }
     defer in.Close()
 
+    // decode image
+    img, ft, err := image.Decode(in)
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+
     // open outfile
     out, err := os.Create(out_name)
     if err != nil {
@@ -51,13 +58,6 @@ func main() {
         return
     }
     defer out.Close()
-
-    // decode image
-    img, ft, err := image.Decode(in)
-    if err != nil {
-        fmt.Println(err)
-        return
-    }
 
     resizer := resize.Resize(img)
     if h == 0 {
