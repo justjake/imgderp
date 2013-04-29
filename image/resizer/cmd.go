@@ -26,6 +26,7 @@ func main() {
         fmt.Println("tool INFILE OUTFILE - resize using nearest neightbor")
         fmt.Println("  supported formats: JPG, PNG, GIF.")
         fmt.Println("  GIFs will be written out as PNGs. Anything can be written to TXT with -ft txt")
+        flag.Usage()
         return
     }
 
