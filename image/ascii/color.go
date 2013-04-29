@@ -10,47 +10,46 @@ import (
 // UTF COLORSPACE
 // PALETTE DEFINITION
 // TODO: better palette, with more UTF codepoints
-var txtPallete = []TextColor{ ' ', ' ', '.', ':', 'o', 'O', '8', '@', '#', }
 
-// first -- colorspace: TEXT
-// mostly a mockery of color.Grey
-type TextColor rune
-func createPalleteMap (colors []TextColor) map[TextColor]uint32 {
-    value := 255 / len(colors)
-    mp := make(map[TextColor]uint32, len(colors))
-
-    for i, r := range colors {
-        mp[r] = uint32(i * value)
-        mp[r] |= mp[r] << 8
-    }
-    return mp
-}
-func createPallete (colors []TextColor) color.Palette {
-    pal := make([]color.Color, len(colors))
-    for i, c := range colors {
-        pal[i] = color.Color(c)
-    }
-    return color.Palette(pal)
+// UTF runes as colors
+// type TextColor rune
+type TextColor struct {
+    Rune rune
+    lookupTable *map[rune]uint32
 }
 
-// precomute uint32 lookups for color conversion
-var txtPalleteMap = createPalleteMap(txtPallete)
-func (c TextColor) RGBA() (r, g, b, a uint32) {
-    y := txtPalleteMap[c]
+func (c *TextColor) RGBA() (r, g, b, a uint32) {
+    y := (*c.lookupTable)[ c.Rune ]
     return y, y, y, 0xffff
 }
 
-// and here's the color space!
-var Palette color.Palette = createPallete(txtPallete)
-
-
-// color model using that palette
-func textModel (c color.Color) color.Color {
-    if _, ok := c.(TextColor); ok {
-        return c
-    }
-    return Palette.Convert(c)
+func (c *TextColor) String() string {
+    return string(c.Rune)
 }
 
+
+// Make a new palette. Only way to get text colors.
+// color values per character are global, so overlapping palettes will break things
+// TODO: rework TextColor as a struct to do local lookups
+func MakePalette (chars... rune) color.Palette {
+    value := 255 / len(chars)
+
+    txtPalleteMap := make(map[rune]uint32, len(chars))
+    pal := make([]color.Color, len(chars))
+
+    for i, r := range chars {
+        txtPalleteMap[r] = uint32(i * value)
+        txtPalleteMap[r] |= txtPalleteMap[r] << 8
+
+        c := TextColor{r, &txtPalleteMap}
+        pal[i] = &c
+    }
+
+    return pal
+}
+
+// default Palette
+var Palette color.Palette = MakePalette(' ', '.', ':', 'o', 'O', '8', '@')
+
 // The color model for ASCII images
-var TextModel color.Model = color.ModelFunc(textModel)
+var TextModel color.Model = color.Model(Palette)

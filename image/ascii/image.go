@@ -13,7 +13,7 @@ import (
 // TextImage type!
 
 // cols[rows[letters]]
-type Image [][]rune
+type Image [][]*TextColor
 
 func (img *Image) ColorModel() color.Model {
     return TextModel
@@ -27,15 +27,19 @@ func (img *Image) Bounds() image.Rectangle {
 }
 
 func (img *Image) At(x, y int) color.Color {
-    return TextColor((*img)[y][x])
+    return ((*img)[y][x])
 }
 
 
 func (t *Image) String() string {
-    grid := [][]rune(*t)
+    grid := *t
     lines := make([]string, len(grid))
     for i, v := range grid {
-        lines[i] = string(v) + "\n"
+        rs := make([]rune, len(v))
+        for k := range rs {
+            rs[k] = v[k].Rune
+        }
+        lines[i] = string(rs) + "\n"
     }
     return strings.Join(lines, "")
 }
@@ -43,8 +47,8 @@ func (t *Image) String() string {
 // Image creation
 func NewImage(w, h uint) *Image {
     size := w * h
-    store := make([]rune, size)
-    grid := make([][]rune, h)
+    store := make([]*TextColor, size)
+    grid := make([][]*TextColor, h)
     var i uint
     for i = 0; i < h; i++ {
         grid[i] = store[i*w:(i+1)*w]
@@ -55,12 +59,9 @@ func NewImage(w, h uint) *Image {
 
 // convert an image into ASCII!
 // watch out, this might be painfully slow...
-func Convert(m image.Image) *Image {
+func Convert(m image.Image, p []TextColor) *Image {
 
-    // check to see if its already ASCII (!)
-    if cor, ok := m.(*Image); ok {
-        return cor
-    }
+    c := color.Palette(p)
 
     // create image of correct size
     bounds := m.Bounds()
@@ -72,7 +73,7 @@ func Convert(m image.Image) *Image {
     grid := *img
     for y := range grid {
         for x := range grid[y] {
-            grid[y][x] = rune(TextModel.Convert(m.At(x + bounds.Min.X, y + bounds.Min.Y)).(TextColor))
+            grid[y][x] = pal.Convert(m.At(x + bounds.Min.X, y + bounds.Min.Y)).(TextColor)
         }
     }
     return img
