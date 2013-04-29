@@ -20,14 +20,14 @@ func (img *Image) ColorModel() color.Model {
 }
 
 func (img *Image) Bounds() image.Rectangle {
-    w := len(*img)
-    h := len((*img)[0])
+    h := len(*img)
+    w := len((*img)[0])
 
     return image.Rect(0, 0, w, h)
 }
 
 func (img *Image) At(x, y int) color.Color {
-    return TextColor((*img)[x][y])
+    return TextColor((*img)[y][x])
 }
 
 
@@ -44,10 +44,10 @@ func (t *Image) String() string {
 func NewImage(w, h uint) *Image {
     size := w * h
     store := make([]rune, size)
-    grid := make([][]rune, w)
+    grid := make([][]rune, h)
     var i uint
-    for i = 0; i < w; i++ {
-        grid[i] = store[i*h:(i+1)*h]
+    for i = 0; i < h; i++ {
+        grid[i] = store[i*w:(i+1)*w]
     }
     out := Image(grid)
     return &out
@@ -70,9 +70,9 @@ func Convert(m image.Image) *Image {
 
     // dereference for slice manipulation
     grid := *img
-    for x := range grid {
-        for y := range grid[x] {
-            grid[x][y] = rune(TextModel.Convert(m.At(x + bounds.Min.X, y + bounds.Min.Y)).(TextColor))
+    for y := range grid {
+        for x := range grid[y] {
+            grid[y][x] = rune(TextModel.Convert(m.At(x + bounds.Min.X, y + bounds.Min.Y)).(TextColor))
         }
     }
     return img

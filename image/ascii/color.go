@@ -5,13 +5,12 @@ package ascii
 
 import (
     "image/color"
-    "fmt"
 )
 
 // UTF COLORSPACE
 // PALETTE DEFINITION
 // TODO: better palette, with more UTF codepoints
-var txtPallete = []TextColor{ ' ', '.', ':', 'o', 'O', '8', '@', '#', }
+var txtPallete = []TextColor{ ' ', ' ', '.', ':', 'o', 'O', '8', '@', '#', }
 
 // first -- colorspace: TEXT
 // mostly a mockery of color.Grey
@@ -50,9 +49,7 @@ func textModel (c color.Color) color.Color {
     if _, ok := c.(TextColor); ok {
         return c
     }
-    ret := Palette.Convert(c)
-    fmt.Println(ret)
-    return ret
+    return Palette.Convert(c)
 }
 
 // The color model for ASCII images
