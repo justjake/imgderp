@@ -5,6 +5,7 @@ package ascii
 
 import (
     "image/color"
+    "fmt"
 )
 
 // UTF COLORSPACE
@@ -16,7 +17,7 @@ var txtPallete = []TextColor{ ' ', '.', ':', 'o', 'O', '8', '@', '#', }
 // mostly a mockery of color.Grey
 type TextColor rune
 func createPalleteMap (colors []TextColor) map[TextColor]uint32 {
-    value := len(colors) / 255
+    value := 255 / len(colors)
     mp := make(map[TextColor]uint32, len(colors))
 
     for i, r := range colors {
@@ -49,7 +50,9 @@ func textModel (c color.Color) color.Color {
     if _, ok := c.(TextColor); ok {
         return c
     }
-    return Palette.Convert(c)
+    ret := Palette.Convert(c)
+    fmt.Println(ret)
+    return ret
 }
 
 // The color model for ASCII images
