@@ -22,6 +22,8 @@ var Commands = map[string]ui.Command{
     "list": ui.ListCommand,
 
     "add" : ui.AddCommand,
+
+    "tag": ui.TagCommand,
 }
 
 

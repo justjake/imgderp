@@ -14,6 +14,7 @@ type settings struct {
     targetLibrary *it.Library
 }
 
+
 var s = settings{}
 func SetTargetLibrary (lib *it.Library) {
     s.targetLibrary = lib
@@ -27,64 +28,88 @@ func (e Error) Error() string {
 // Commands
 type Command func(io.Writer, []string) error
 
-
-// Commands must be passed a certain number of args
-func NeedsMoreThan(min int, c Command) Command {
-    return func (o io.Writer, p []string) error {
-        if l := len(p); l < min {
-            fmt.Fprintf(o, "This command needs more than %d args. You passed %d.", min, l)
-            return nil
-        }
-        return c(o, p)
-    }
+func QuitCommand(out io.Writer, params []string) error {
+    return Error("exit")
 }
 
+func ListCommand (o io.Writer, p []string) error {
+    fmt.Fprintln(o, "Images:")
+    if len(s.targetLibrary.Images) > 0 {
+        for _, img := range s.targetLibrary.Images {
+            fmt.Fprintln(o, img)
+        } 
+    } else {
+            fmt.Fprintln(o, "no images in library.")
+    }
+    fmt.Fprintln(o, "Tags:")
+    if len(s.targetLibrary.Tags) > 0 {
+        for _, tag := range s.targetLibrary.Tags {
+            fmt.Fprintln(o, tag)
+        }
+    } else {
+        fmt.Fprintln(o, "no tags in library.")
+    }
+    return nil
+}
 
+// adds an image to the library
+func AddCommand (o io.Writer, p []string) error {
+    // params
+    if len(p) < 2 {
+        fmt.Fprintf(o, "Add requires at least 2 parameters.\n")
+        return nil
+    }
+    fn, title, tagNames := p[0], p[1], p[2:]
 
-var (
-    QuitCommand =  func (out io.Writer, params []string) error {
-        fmt.Fprintln(out, "Exiting.")
-        return Error("exit")
+    // get tags or create them
+    tags := make([]*it.Tag, len(tagNames))
+    for i, tn := range tagNames {
+        tag, ok := s.targetLibrary.Tags[tn]
+        if ! ok {
+            tag, _ = s.targetLibrary.NewTag(tn, []*it.Image{})
+        }
+        tags[i] = tag
     }
 
-    ListCommand = func(o io.Writer, p []string) error {
-        if len(s.targetLibrary.Images) > 0 {
-            for _, img := range s.targetLibrary.Images {
-                fmt.Fprintln(o, img.Title)
-            }
-        } else {
-            fmt.Fprintln(o, "No images in library.")
-        }
-        return nil // no errors
-    }
-
-    // adds an image to the library
-    AddCommand = func(o io.Writer, p []string) error {
-        // params
-        if len(p) < 2 {
-            fmt.Fprintf(o, "Add requires at least 2 parameters.\n")
-        fn, title, tagNames := p[0], p[1], p[2:]
-
-        // get tags or create them
-        tags := make([]*it.Tag, len(tagNames))
-        for i, tn := range tagNames {
-            tag, ok := s.targetLibrary.Tags[tn]
-            if ! ok {
-                tag, _ = s.targetLibrary.NewTag(tn, []*it.Image{})
-            }
-            tags[i] = tag
-        }
-
-        _, err := s.targetLibrary.NewImage(fn, title, tags)
-        if err != nil {
-            fmt.Fprintln(o, err)
-        }
-
-        fmt.Fprintf(o, "Added new image \"%s\" (%s) to library\n", title, fn)
+    _, err := s.targetLibrary.NewImage(fn, title, tags)
+    if err != nil {
+        fmt.Fprintln(o, err)
         return nil
     }
 
-)
+    fmt.Fprintf(o, "Added new image \"%s\" (%s) to library\n", title, fn)
+    return nil
+}
+
+// tags image with filename p[0] with tag names p[1:]
+// every tag is a #hashtag :P
+func TagCommand (o io.Writer, p []string) (err error) {
+    if len(p) < 2 {
+        fmt.Fprintln(o, "`tag` requires at least two params: a filename indicating an image, and a tag for that image")
+        return nil
+    }
+
+    if img, ok := s.targetLibrary.Images[p[0]]; ok {
+        // img exists, let's find the tags
+        for _, tag_name := range p[1:] {
+
+            // all tags are hashtags
+            if tag_name[0] != '#' {
+                tag_name = "#" + tag_name
+            }
+
+            tag := s.targetLibrary.FindTag(tag_name)
+            s.targetLibrary.TagImage(img, tag)
+        }
+    } else {
+        fmt.Fprintf(o, "Image with filename \"%s\" not found\n", p[0])
+    }
+    return nil
+}
+
+        
+
+
 
 // runs a system command, handling the zany errors and things by doing
 // UI stuff.
