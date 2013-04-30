@@ -18,6 +18,7 @@ type TextColor struct {
     lookupTable *map[rune]uint32
 }
 
+
 func (c *TextColor) RGBA() (r, g, b, a uint32) {
     y := (*c.lookupTable)[ c.Rune ]
     return y, y, y, 0xffff
@@ -27,6 +28,13 @@ func (c *TextColor) String() string {
     return string(c.Rune)
 }
 
+func Reverse(cs []*TextColor) []*TextColor {
+    runes := make([]rune, len(cs))
+    for i, n := 0, len(cs); i < n; i++ {
+        runes[i] = cs[n-1-i].Rune
+    }
+    return MakeTextColors(runes...)
+}
 
 // Make a new palette. Only way to get text colors.
 // color values per character are global, so overlapping palettes will break things
@@ -58,8 +66,12 @@ func NewPalette(p []*TextColor) color.Palette {
 }
 
 // default Palette
-var DefaultSet = MakeTextColors(' ', '.', ':', 'o', 'O', '8', '@')
-var UnicodeBoxSet = MakeTextColors(' ', '▏', '▎', '▍', '▌', '▋', '▊',)
+var (
+    DefaultSet = MakeTextColors([]rune(" .:oO8@")...)
+    UnicodeBoxSet = MakeTextColors([]rune(" ▏▎▍▌▋▊")...)
+    AlternateSet = MakeTextColors([]rune(" .:;+=xX$&")...)
+    UnicodeShadeSet = MakeTextColors([]rune(" .░▒▓￭")...)
+)
 
 // The color model for ASCII images
 var TextModel color.Model = color.Model(NewPalette(DefaultSet))
