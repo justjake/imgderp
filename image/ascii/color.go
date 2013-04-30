@@ -14,13 +14,12 @@ import (
 // UTF runes as colors
 // type TextColor rune
 type TextColor struct {
-    Rune rune
+    Rune        rune
     lookupTable *map[rune]uint32
 }
 
-
 func (c *TextColor) RGBA() (r, g, b, a uint32) {
-    y := (*c.lookupTable)[ c.Rune ]
+    y := (*c.lookupTable)[c.Rune]
     return y, y, y, 0xffff
 }
 
@@ -39,7 +38,7 @@ func Reverse(cs []*TextColor) []*TextColor {
 // Make a new palette. Only way to get text colors.
 // color values per character are global, so overlapping palettes will break things
 // TODO: rework TextColor as a struct to do local lookups
-func MakeTextColors (chars... rune) []*TextColor {
+func MakeTextColors(chars ...rune) []*TextColor {
     value := 255 / len(chars)
 
     txtPalleteMap := make(map[rune]uint32, len(chars))
@@ -67,9 +66,9 @@ func NewPalette(p []*TextColor) color.Palette {
 
 // default Palette
 var (
-    DefaultSet = MakeTextColors([]rune(" .:oO8@")...)
-    UnicodeBoxSet = MakeTextColors([]rune(" ▏▎▍▌▋▊")...)
-    AlternateSet = MakeTextColors([]rune(" .:;+=xX$&")...)
+    DefaultSet      = MakeTextColors([]rune(" .:oO8@")...)
+    UnicodeBoxSet   = MakeTextColors([]rune(" ▏▎▍▌▋▊")...)
+    AlternateSet    = MakeTextColors([]rune(" .:;+=xX$&")...)
     UnicodeShadeSet = MakeTextColors([]rune(" .░▒▓￭")...)
 )
 

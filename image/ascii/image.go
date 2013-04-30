@@ -6,8 +6,8 @@ package ascii
 import (
     "image"
     "image/color"
-    "strings"
     "io" // for a silly reason ;)
+    "strings"
 )
 
 // TextImage type!
@@ -30,7 +30,6 @@ func (img *Image) At(x, y int) color.Color {
     return ((*img)[y][x])
 }
 
-
 func (t *Image) String() string {
     grid := *t
     lines := make([]string, len(grid))
@@ -51,7 +50,7 @@ func NewImage(w, h uint) *Image {
     grid := make([][]*TextColor, h)
     var i uint
     for i = 0; i < h; i++ {
-        grid[i] = store[i*w:(i+1)*w]
+        grid[i] = store[i*w : (i+1)*w]
     }
     out := Image(grid)
     return &out
@@ -67,18 +66,17 @@ func Convert(m image.Image, p []*TextColor) *Image {
     bounds := m.Bounds()
     s := bounds.Size()
     img := NewImage(uint(s.X),
-                    uint(s.Y))
+        uint(s.Y))
 
     // dereference for slice manipulation
     grid := *img
     for y := range grid {
         for x := range grid[y] {
-            grid[y][x] = c.Convert(m.At(x + bounds.Min.X, y + bounds.Min.Y)).(*TextColor)
+            grid[y][x] = c.Convert(m.At(x+bounds.Min.X, y+bounds.Min.Y)).(*TextColor)
         }
     }
     return img
 }
-
 
 // And encoding, oh ho!
 // possibly the worst way to write this
@@ -100,4 +98,4 @@ func Encode(w io.Writer, m image.Image, s []*TextColor) error {
 
 // Some default pixel ratios for fun
 // Determine by taking a screenshot of the cursor box in your terminal, and dividing widht/height.
-var  TextPixelRatio float64 = 6.0 / 14.0
+var TextPixelRatio float64 = 6.0 / 14.0
