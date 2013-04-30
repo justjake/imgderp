@@ -9,6 +9,7 @@ import (
     "image"
     "image/jpeg"
     "image/png"
+    _ "image/gif"
 )
 
 var charsets =  map[string][]*ascii.TextColor {
@@ -28,6 +29,7 @@ var (
     useTextPixelRatio = flag.Bool("tpr", false, fmt.Sprintf("Use text pixel ratio of %f instead of the value of -pxr", ascii.TextPixelRatio))
     charSetName = flag.String("setname", "default", "Charset to use for -ft=txt if -chars is unset. Values: default, box")
     invertCharSet = flag.Bool("invert", false, "Reverse the ordering of the charset. Useful for dark-on-light output")
+    verbose = flag.Bool("v", false, "Print info about the operation")
 )
 
 func init() {
@@ -95,7 +97,7 @@ func main() {
     if in == nil {
         in, err = os.Open(in_name)
         if err != nil {
-            fmt.Println(err)
+            fmt.Fprintln(os.Stderr, err)
             return
         }
     }
@@ -104,7 +106,7 @@ func main() {
     // decode image
     img, ft, err := image.Decode(in)
     if err != nil {
-        fmt.Println(err)
+        fmt.Fprintln(os.Stderr, err)
         return
     }
 
@@ -112,7 +114,7 @@ func main() {
     if out == nil {
         out, err = os.Create(out_name)
         if err != nil {
-            fmt.Println(err)
+            fmt.Fprintln(os.Stderr, err)
             return
         }
     }
@@ -128,11 +130,13 @@ func main() {
     resizer.TargetHeight = resizer.HeightForPixelRatio(*pixelRatio)
 
     // note the operation
-    fmt.Fprintf(os.Stderr, "Resizing image of type %s to [%d, %d] ", ft, w, h)
-    if len(out_name) > 0 {
-        fmt.Fprintf(os.Stderr, "at '%s'\n", out_name)
-    } else {
-        fmt.Fprintf(os.Stderr, "\n")
+    if *verbose {
+        fmt.Fprintf(os.Stderr, "Resizing image of type %s to [%d, %d] ", ft, w, h)
+        if len(out_name) > 0 {
+            fmt.Fprintf(os.Stderr, "at '%s'\n", out_name)
+        } else {
+            fmt.Fprintf(os.Stderr, "\n")
+        }
     }
 
     // resize
@@ -164,8 +168,6 @@ func main() {
         // flip charset for dark-on-light?
         if *invertCharSet {
             colors = ascii.Reverse(colors)
-        } else {
-            fmt.Println("derp. not inverting")
         }
 
         // write out the text
@@ -173,7 +175,7 @@ func main() {
     }
 
     if err != nil {
-        fmt.Println(err)
+        fmt.Fprintln(os.Stderr, err)
     }
 }
 
