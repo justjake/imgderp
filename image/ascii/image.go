@@ -59,9 +59,9 @@ func NewImage(w, h uint) *Image {
 
 // convert an image into ASCII!
 // watch out, this might be painfully slow...
-func Convert(m image.Image, p []TextColor) *Image {
+func Convert(m image.Image, p []*TextColor) *Image {
 
-    c := color.Palette(p)
+    c := NewPalette(p)
 
     // create image of correct size
     bounds := m.Bounds()
@@ -73,7 +73,7 @@ func Convert(m image.Image, p []TextColor) *Image {
     grid := *img
     for y := range grid {
         for x := range grid[y] {
-            grid[y][x] = pal.Convert(m.At(x + bounds.Min.X, y + bounds.Min.Y)).(TextColor)
+            grid[y][x] = c.Convert(m.At(x + bounds.Min.X, y + bounds.Min.Y)).(*TextColor)
         }
     }
     return img
@@ -82,13 +82,13 @@ func Convert(m image.Image, p []TextColor) *Image {
 
 // And encoding, oh ho!
 // possibly the worst way to write this
-func Encode(w io.Writer, m image.Image) error {
+func Encode(w io.Writer, m image.Image, s []*TextColor) error {
     // first convert to TextImage
     var local *Image
     if _, ok := m.(*Image); ok {
         local = m.(*Image)
     } else {
-        local = Convert(m)
+        local = Convert(m, s)
     }
 
     // now convert it to string
@@ -97,3 +97,7 @@ func Encode(w io.Writer, m image.Image) error {
     _, err := io.Copy(w, rdr)
     return err // hope this is nil I guess
 }
+
+// Some default pixel ratios for fun
+// Determine by taking a screenshot of the cursor box in your terminal, and dividing widht/height.
+var  TextPixelRatio float64 = 6.0 / 14.0

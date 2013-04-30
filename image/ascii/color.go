@@ -31,11 +31,11 @@ func (c *TextColor) String() string {
 // Make a new palette. Only way to get text colors.
 // color values per character are global, so overlapping palettes will break things
 // TODO: rework TextColor as a struct to do local lookups
-func MakePalette (chars... rune) color.Palette {
+func MakeTextColors (chars... rune) []*TextColor {
     value := 255 / len(chars)
 
     txtPalleteMap := make(map[rune]uint32, len(chars))
-    pal := make([]color.Color, len(chars))
+    pal := make([]*TextColor, len(chars))
 
     for i, r := range chars {
         txtPalleteMap[r] = uint32(i * value)
@@ -48,8 +48,18 @@ func MakePalette (chars... rune) color.Palette {
     return pal
 }
 
+// slice of *TextColor -> color.Palette
+func NewPalette(p []*TextColor) color.Palette {
+    pal := make([]color.Color, len(p))
+    for i, r := range p {
+        pal[i] = color.Color(r)
+    }
+    return pal
+}
+
 // default Palette
-var Palette color.Palette = MakePalette(' ', '.', ':', 'o', 'O', '8', '@')
+var DefaultSet = MakeTextColors(' ', '.', ':', 'o', 'O', '8', '@')
+var UnicodeBoxSet = MakeTextColors(' ', '▏', '▎', '▍', '▌', '▋', '▊',)
 
 // The color model for ASCII images
-var TextModel color.Model = color.Model(Palette)
+var TextModel color.Model = color.Model(NewPalette(DefaultSet))

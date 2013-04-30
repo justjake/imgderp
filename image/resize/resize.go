@@ -7,22 +7,50 @@ import (
 
 type resizer struct {
     img image.Image
+    TargetWidth int
+    TargetHeight int
 }
 
+// To re-scale in one line:
+// new_img := Resizer{img, target_w, target_h}.ResizeNearestNeighbor()
+type Resizer resizer
+
+
+
+// Pixel ratio is the height (in Px) of a character in your font
+// versus it's width. If you use a perfectly square font, or are
+// outputting to pixels, 1 is the number.
+func (r *resizer) HeightForPixelRatio (rat float64) int {
+    H := r.TargetHeight
+    h := float64(H) * rat
+    return int(h)
+}
+
+// Sizing for fit-width
 func (r *resizer) HeightForWidth(w int) int {
-    older := r.img
-    bounds := older.Bounds()
-    W := bounds.Max.X - bounds.Min.X
-    H := bounds.Max.Y - bounds.Min.Y
+    W := r.TargetWidth
+    H := r.TargetHeight
     scale := float64(w) / float64(W)
     return int(float64(H) * scale)
 }
 
-func (r *resizer) NearestNeighbor(w, h int) image.Image {
+// Sizing for fit-height
+func (r *resizer) WidthForHeight(h int) int {
+    W := r.TargetWidth
+    H := r.TargetHeight
+    scale := float64(h) / float64(H)
+    return int(float64(W) * scale)
+}
+
+
+// nearest neighbor image scaling
+func (r *resizer) ResizeNearestNeighbor() image.Image {
+    w, h := r.TargetWidth, r.TargetHeight
     older := r.img
     bounds := older.Bounds()
-    oldW := bounds.Max.X - bounds.Min.X
-    oldH := bounds.Max.Y - bounds.Min.Y
+    oldW, oldH := bounds.Size().X, bounds.Size().Y
+    /*bounds.Max.X - bounds.Min.X*/
+    /*oldH := bounds.Max.Y - bounds.Min.Y*/
 
     xFactor := float64(oldW) / float64(w)
     yFactor := float64(oldH) / float64(h)
@@ -46,6 +74,9 @@ func (r *resizer) NearestNeighbor(w, h int) image.Image {
     return newer
 }
 
-func Resize(pic image.Image) *resizer {
-    return &resizer{pic}
+// if you want to scale just for pixel ratio, or scale down
+// based on width
+func NewResizer(pic image.Image) *resizer {
+    size := pic.Bounds().Size()
+    return &resizer{pic, size.X, size.Y}
 }
