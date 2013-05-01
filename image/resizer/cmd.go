@@ -96,9 +96,10 @@ func gifAnimate(out *os.File, g *gif.GIF, w, h int, pal []*ascii.TextColor) () {
         prevImg = curImg
     }
 
-        
+    // TODO: deal with registration/transparency color
+    // TODO: deal with GIFs that have a frame delay of 0
 
-    // naive frame playback, in another thread I guess
+    // naive playback
     for {
         for i, txt := range resized {
             ts := time.Now().UnixNano()
@@ -136,8 +137,14 @@ func getColors() []*ascii.TextColor {
 
 func userResizer (img image.Image, w, h int) *resize.Resizer {
     resizer := resize.NewResizer(img)
+    if w == 0 && h == 0 {
+        w = 80
+    }
     if h == 0 {
         h = resizer.HeightForWidth(w)
+    }
+    if w == 0 {
+        w = resizer.WidthForHeight(h)
     }
     resizer.TargetWidth = w
     resizer.TargetHeight = h
