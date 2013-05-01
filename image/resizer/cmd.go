@@ -17,6 +17,7 @@ var charsets =  map[string][]*ascii.TextColor {
     "box": ascii.UnicodeBoxSet,
     "alt": ascii.AlternateSet,
     "shade": ascii.UnicodeShadeSet,
+    "new": ascii.SciSet,
 }
 
 // params
@@ -27,7 +28,7 @@ var (
     charSet = flag.String("chars", "" , "Characters, from empty to solid, to use for txt-image conversion")
     pixelRatio = flag.Float64("pxr", 1.0, "pixel ratio of output. Useful for -ft=txt, where fonts are usually taller than they are wide")
     useTextPixelRatio = flag.Bool("tpr", false, fmt.Sprintf("Use text pixel ratio of %f instead of the value of -pxr", ascii.TextPixelRatio))
-    charSetName = flag.String("setname", "default", "Charset to use for -ft=txt if -chars is unset. Values: default, box")
+    charSetName = flag.String("set", "default", "Charset to use for -ft=txt if -chars is unset. Values: default, box")
     invertCharSet = flag.Bool("invert", false, "Reverse the ordering of the charset. Useful for dark-on-light output")
     verbose = flag.Bool("v", false, "Print info about the operation")
 )
