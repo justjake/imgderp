@@ -201,9 +201,9 @@ func main() {
 
     // CHOO CHOO STOP HERE AND ANIMATE GIFS IF THATS WHAT WE DO
     if *animate {
-        decoded, _ := gif.DecodeAll(in)
+        decoded, err := gif.DecodeAll(in)
         if err != nil {
-            fmt.Fprintf(os.Stderr, "Animated gif decoding error: %s", err)
+            fmt.Fprintf(os.Stderr, "Animated gif decoding error: %s\n", err)
             return
         }
 
