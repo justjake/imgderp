@@ -3,13 +3,15 @@ package main
 import (
     "flag"
     "os"
+    "io"
     "fmt"
     "github.com/justjake/imgtagger/image/resize"
     "github.com/justjake/imgtagger/image/ascii" // lel
     "image"
     "image/jpeg"
     "image/png"
-    _ "image/gif"
+    "image/gif"
+    "time" // gif playback
 )
 
 var charsets =  map[string][]*ascii.TextColor {
@@ -22,6 +24,7 @@ var charsets =  map[string][]*ascii.TextColor {
 
 // params
 var (
+    animate = flag.Bool("animate", false, "Skip all other functions and just show an animated gif")
     outputType  = flag.String("ft", "auto", "Output filetype")
     targetWidth = flag.Int("w", 80, "Output width")
     targetHeight = flag.Int("h", 0, "Output height. Will be auto-computed if values is < 1")
@@ -56,6 +59,90 @@ func init() {
   %s -ft=jpg -w=500 ~/Pictures/screenshot.png ~/public_html/images/screenshot.jpg
 `, os.Args[0], os.Args[0])
     }
+}
+
+
+// working with animated gifs:
+    // type GIF struct {
+    //     Image     []*image.Paletted // The successive images.
+    //     Delay     []int             // The successive delay times, one per frame, in 100ths of a second.
+    //     LoopCount int               // The loop count.
+    // }
+const delayMultiplier = time.Second / 100
+func gifAnimate(out *os.File, g *gif.GIF, w, h int, pal []*ascii.TextColor) () {
+    // first convert every gif image into a txt image
+    resized := make([]*string, len(g.Image))
+
+    first := (&resize.Resizer{g.Image[0], w, h}).ResizeNearestNeighbor().(*image.RGBA)
+    prevImg, curImg := first, first
+    b := curImg.Bounds()
+
+    for i, frame := range g.Image {
+        // overlay imgs
+        // gif frames are diffs, this expands to whole images
+        curImg = (&resize.Resizer{frame, w, h}).ResizeNearestNeighbor().(*image.RGBA)
+        for y := b.Min.Y; y < b.Max.Y; y++ {
+            for x := b.Min.X; x < b.Max.X; x++ {
+                // copy under non-transparent pixels
+                px := curImg.At(x, y)
+                if _, _, _, a:= px.RGBA(); a == 0 {
+                    curImg.Set(x, y, prevImg.At(x, y))
+                }
+            }
+        }
+        // TODO - investigate memory saving in ascii.Convert because of palette duplication
+        str := ascii.Convert(curImg, pal).String()
+        resized[i] = &str
+        prevImg = curImg
+    }
+
+        
+
+    // naive frame playback, in another thread I guess
+    for {
+        for i, txt := range resized {
+            ts := time.Now().UnixNano()
+            showFrame(out, txt)
+            used := time.Now().UnixNano() - ts
+            time.Sleep(delayMultiplier * time.Duration(g.Delay[i]) - time.Duration(used))
+        }
+    }
+}
+
+// clears the terminal then prints s
+func showFrame(out io.Writer, s *string) {
+    // clear
+    fmt.Fprintln(out, "\033[2J")
+    // play
+    fmt.Fprintln(out, *s)
+}
+
+func getColors() []*ascii.TextColor {
+    var colors []*ascii.TextColor
+
+    // preset vs provided
+    if *charSet == "" {
+        colors = charsets[*charSetName]
+    } else {
+        colors = ascii.MakeTextColors([]rune(*charSet)...)
+    }
+
+    // flip charset for dark-on-light?
+    if *invertCharSet {
+        colors = ascii.Reverse(colors)
+    }
+    return colors
+}
+
+func userResizer (img image.Image, w, h int) *resize.Resizer {
+    resizer := resize.NewResizer(img)
+    if h == 0 {
+        h = resizer.HeightForWidth(w)
+    }
+    resizer.TargetWidth = w
+    resizer.TargetHeight = h
+    resizer.TargetHeight = resizer.HeightForPixelRatio(*pixelRatio)
+    return resizer
 }
 
 
@@ -104,6 +191,21 @@ func main() {
     }
     defer in.Close()
 
+
+    // CHOO CHOO STOP HERE AND ANIMATE GIFS IF THATS WHAT WE DO
+    if *animate {
+        decoded, _ := gif.DecodeAll(in)
+        if err != nil {
+            fmt.Fprintf(os.Stderr, "Animated gif decoding error: %s", err)
+            return
+        }
+
+        // determine image size
+        r := userResizer(decoded.Image[0], w, h)
+        gifAnimate(os.Stdout, decoded, r.TargetWidth , r.TargetHeight, getColors())
+        return
+    }
+
     // decode image
     img, ft, err := image.Decode(in)
     if err != nil {
@@ -122,13 +224,7 @@ func main() {
     defer out.Close()
 
     // setup resizer to the correct height
-    resizer := resize.NewResizer(img)
-    if h == 0 {
-        h = resizer.HeightForWidth(w)
-    }
-    resizer.TargetWidth = w
-    resizer.TargetHeight = h
-    resizer.TargetHeight = resizer.HeightForPixelRatio(*pixelRatio)
+    resizer := userResizer(img, w, h)
 
     // note the operation
     if *verbose {
@@ -157,19 +253,7 @@ func main() {
         err = jpeg.Encode(out, new_img, &jpeg.Options{90})
     case "txt":
         // set up the character encoding
-        var colors []*ascii.TextColor
-
-        // preset vs provided
-        if *charSet == "" {
-            colors = charsets[*charSetName]
-        } else {
-            colors = ascii.MakeTextColors([]rune(*charSet)...)
-        }
-
-        // flip charset for dark-on-light?
-        if *invertCharSet {
-            colors = ascii.Reverse(colors)
-        }
+        colors := getColors()
 
         // write out the text
         err = ascii.Encode(out, new_img, colors)

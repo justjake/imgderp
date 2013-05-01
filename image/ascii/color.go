@@ -68,7 +68,7 @@ func NewPalette(p []*TextColor) color.Palette {
 var (
     DefaultSet      = MakeTextColors([]rune(" .:oO8@")...)
     AlternateSet    = MakeTextColors([]rune(" .:;+=xX$&")...)
-    SciSet          = MakeTextColors([]rune(" .,-+=:;/XHM%#$@")...)
+    SciSet          = MakeTextColors([]rune(" .,-+=:;/XHM%@#$")...)
     UnicodeBoxSet   = MakeTextColors([]rune(" ▏▎▍▌▋▊")...)
     UnicodeShadeSet = MakeTextColors([]rune(" .░▒▓￭")...)
 )
