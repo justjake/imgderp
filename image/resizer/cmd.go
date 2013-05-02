@@ -155,8 +155,8 @@ func encodeFramesSync(g *gif.GIF, w, h int, pal []*ascii.TextColor) (frames [][]
         }
     }
 
-    if *verbose {
-        fmt.Fprintf(os.Stderr, "Rendered %d frames in %v seconds (%d FPS, SYNC)", len(g.Image), time.Since(ts), int(time.Since(ts)) / len(g.Image))
+    if *verbose || *profile {
+        fmt.Fprintf(os.Stderr, "Rendered %d frames in %v seconds (%d FPS, SYNC)\n", len(g.Image), time.Since(ts), int(time.Since(ts)) / len(g.Image))
     }
 
     return
@@ -212,8 +212,8 @@ func encodeFramesPipeline(g *gif.GIF, w, h int, pal []*ascii.TextColor) (frames 
     close(resizedFrames)
     <-done
 
-    if *verbose {
-        fmt.Fprintf(os.Stderr, "Rendered %d frames in %v seconds (%d FPS, ASYNC)", bufferSize, time.Since(ts), int(time.Since(ts)) / bufferSize)
+    if *verbose || *profile {
+        fmt.Fprintf(os.Stderr, "Rendered %d frames in %v seconds (%d FPS, ASYNC)\n", bufferSize, time.Since(ts), int(time.Since(ts)) / bufferSize)
     }
 
     return
