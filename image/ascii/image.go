@@ -8,6 +8,7 @@ import (
     "image/color"
     "io" // for a silly reason ;)
     "strings"
+    "sync"
 )
 
 // TextImage type!
@@ -30,27 +31,33 @@ func (img *Image) At(x, y int) color.Color {
     return ((*img)[y][x])
 }
 
+func (t *Image) StringLine (y int) string {
+    line := (*t)[y]
+    out := make([]rune, len(line))
+    for i := range line {
+        out[i] = line[i].Rune
+    }
+    return string(out)
+}
+
 func (t *Image) String() string {
     grid := *t
     lines := make([]string, len(grid))
-    for i, v := range grid {
-        rs := make([]rune, len(v))
-        for k := range rs {
-            rs[k] = v[k].Rune
-        }
-        lines[i] = string(rs) + "\n"
+    for y :=  range grid {
+        lines[y] = t.StringLine(y) + "\n"
     }
     return strings.Join(lines, "")
 }
 
 // Image creation
 func NewImage(w, h uint) *Image {
-    size := w * h
-    store := make([]*TextColor, size)
+    //size := w * h
+    // store := make([]*TextColor, size)
     grid := make([][]*TextColor, h)
     var i uint
     for i = 0; i < h; i++ {
-        grid[i] = store[i*w : (i+1)*w]
+        //grid[i] = store[i*w : (i+1)*w]
+        grid[i] = make([]*TextColor, w)
     }
     out := Image(grid)
     return &out
@@ -70,11 +77,17 @@ func Convert(m image.Image, p []*TextColor) *Image {
 
     // dereference for slice manipulation
     grid := *img
+    var wg sync.WaitGroup
     for y := range grid {
-        for x := range grid[y] {
-            grid[y][x] = c.Convert(m.At(x+bounds.Min.X, y+bounds.Min.Y)).(*TextColor)
-        }
+        wg.Add(1)
+        go func(r []*TextColor, y int) {
+            for x := range r {
+                r[x] = c.Convert(m.At(x+bounds.Min.X, y+bounds.Min.Y)).(*TextColor)
+            }
+            wg.Done()
+        }(grid[y], y)
     }
+    wg.Wait()
     return img
 }
 

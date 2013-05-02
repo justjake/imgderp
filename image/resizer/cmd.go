@@ -1,6 +1,7 @@
 package main
 
 import (
+    "sync"
     "flag"
     "os"
     "io"
@@ -8,6 +9,7 @@ import (
     "github.com/justjake/imgtagger/image/resize"
     "github.com/justjake/imgtagger/image/ascii" // lel
     "image"
+    "image/color"
     "image/jpeg"
     "image/png"
     "image/gif"
@@ -33,7 +35,7 @@ var (
     useTextPixelRatio = flag.Bool("tpr", false, fmt.Sprintf("Use text pixel ratio of %f instead of the value of -pxr", ascii.TextPixelRatio))
     charSetName = flag.String("set", "default", "Charset to use for -ft=txt if -chars is unset. Values: default, box")
     invertCharSet = flag.Bool("invert", false, "Reverse the ordering of the charset. Useful for dark-on-light output")
-    verbose = flag.Bool("v", false, "Print info about the operation")
+    verbose = flag.Bool("v", false, "Print info about the operation and image")
 )
 
 func init() {
@@ -62,6 +64,21 @@ func init() {
 }
 
 
+// copy a semi-trasparent image over another image in-place
+func copyImageOver (base *image.RGBA, newer image.Image)  {
+    // points outside of the base bounds will not be copied
+    b := base.Bounds().Intersect(newer.Bounds())
+    for y := b.Min.Y; y < b.Max.Y; y++ {
+        for x := b.Min.X; x < b.Max.X; x++ {
+            // copy over non-transparent pixels
+            px := newer.At(x, y)
+            if _, _, _, a:= px.RGBA(); a != 0 {
+                base.Set(x, y, px)
+            }
+        }
+    }
+}
+
 // working with animated gifs:
     // type GIF struct {
     //     Image     []*image.Paletted // The successive images.
@@ -71,51 +88,111 @@ func init() {
 const delayMultiplier = time.Second / 100
 func gifAnimate(out *os.File, g *gif.GIF, w, h int, pal []*ascii.TextColor) () {
     // first convert every gif image into a txt image
-    resized := make([]*string, len(g.Image))
+    resized := make([][]string, len(g.Image))
 
-    first := (&resize.Resizer{g.Image[0], w, h}).ResizeNearestNeighbor().(*image.RGBA)
-    prevImg, curImg := first, first
-    b := curImg.Bounds()
+    originalBounds := g.Image[0].Bounds()
+    originalSize := originalBounds.Size()
 
+    compiledImage := image.NewRGBA(originalBounds)
+    copyImageOver(compiledImage, g.Image[0])
+
+    // TODO: copy forward the first frame, overlaying the later frames
+    // copy under is a gross hack and obvs. not working
     for i, frame := range g.Image {
-        // overlay imgs
         // gif frames are diffs, this expands to whole images
-        curImg = (&resize.Resizer{frame, w, h}).ResizeNearestNeighbor().(*image.RGBA)
-        for y := b.Min.Y; y < b.Max.Y; y++ {
-            for x := b.Min.X; x < b.Max.X; x++ {
-                // copy under non-transparent pixels
-                px := curImg.At(x, y)
-                if _, _, _, a:= px.RGBA(); a == 0 {
-                    curImg.Set(x, y, prevImg.At(x, y))
-                }
-            }
+        // compute intended w/h for this one
+        // because we'll get streatch sub regiions otherwise
+        curFrameOrigSize := frame.Bounds().Size()
+        scaleX := float64(curFrameOrigSize.X) / float64(originalSize.X)
+        scaleY := float64(curFrameOrigSize.Y) / float64(originalSize.Y)
+
+        // computed target w/h for this frame
+        W := int(float64(w) * scaleX)
+        H := int(float64(h) * scaleY)
+
+        // copy the current frame over the previous frame
+        curFrame := (&resize.Resizer{frame, W, H}).ResizeNearestNeighbor()
+        copyImageOver(compiledImage, curFrame)
+
+        // convert image to string in seperate thread
+        textImage := ascii.Convert(compiledImage, pal)
+        // convert ascii.Image to []string
+        strings := make([]string, len(*textImage))
+        for k := range strings {
+            strings[k] = textImage.StringLine(k)
         }
-        // TODO - investigate memory saving in ascii.Convert because of palette duplication
-        str := ascii.Convert(curImg, pal).String()
-        resized[i] = &str
-        prevImg = curImg
+        // save conversion
+        resized[i] = strings
     }
 
     // TODO: deal with registration/transparency color
     // TODO: deal with GIFs that have a frame delay of 0
 
-    // naive playback
+    // threaded playback
+    playback(out, g, resized)
+    playbackThreaded(out, g, resized)
+}
+
+// TODO: interlace 60fps
+func playbackThreaded(out *os.File, g *gif.GIF, frames [][]string) {
+    abort := new(bool)
+    *abort = false
+    var writeLock sync.Mutex
     for {
-        for i, txt := range resized {
-            ts := time.Now().UnixNano()
-            showFrame(out, txt)
-            used := time.Now().UnixNano() - ts
-            time.Sleep(delayMultiplier * time.Duration(g.Delay[i]) - time.Duration(used))
+        for i, frame := range frames {
+            go showFrame(out, frame, abort, writeLock)
+            if *verbose {
+                fmt.Fprintf(out, " frame %s\n", i)
+            }
+            time.Sleep(delayMultiplier * time.Duration(g.Delay[i]))
+            *abort = true
         }
     }
 }
 
+func playback(out *os.File, g *gif.GIF, frames [][]string) {
+    abort := new(bool)
+    *abort = false
+    var writeLock sync.Mutex
+    for {
+        for i, frame := range frames {
+            showFrame(out, frame, abort, writeLock)
+            if *verbose {
+                fmt.Fprintf(out, " frame %d\n", i) 
+                // showPaletteInfo(out, g.Image[i].Palette)
+                fmt.Fprintln(out, g.Image[i].Bounds())
+            }
+            if delay := g.Delay[i]; delay == 0 {
+                time.Sleep(delayMultiplier)
+            } else {
+                time.Sleep(delayMultiplier * time.Duration(delay))
+            }
+
+            *abort = true
+        }
+    }
+}
+
+
 // clears the terminal then prints s
-func showFrame(out io.Writer, s *string) {
-    // clear
+func showFrame(out io.Writer, f []string, quit *bool, m sync.Mutex) {
+    // don't output when another frame is in the pipeline
+    m.Lock()
+    defer m.Unlock()
+    *quit = false
+
+    // clear screen
     fmt.Fprintln(out, "\033[2J")
-    // play
-    fmt.Fprintln(out, *s)
+    // print lines
+    for _, line := range f {
+        switch *quit {
+        case true:
+            // out of time. die
+            return
+        default:
+            fmt.Fprintln(out, line)
+        }
+    }
 }
 
 func getColors() []*ascii.TextColor {
@@ -151,6 +228,14 @@ func userResizer (img image.Image, w, h int) *resize.Resizer {
     resizer.TargetHeight = resizer.HeightForPixelRatio(*pixelRatio)
     return resizer
 }
+
+func showPaletteInfo(o *os.File, p color.Palette) {
+    for i, clr := range p {
+        r,g,b,a := clr.RGBA()
+        fmt.Fprintf(o, "[%d] - r: %d, g: %d, b: %d, a: %d\n", i, r, g, b, a)
+    }
+}
+
 
 
 func main() {
@@ -220,6 +305,14 @@ func main() {
         return
     }
 
+    // verbose -- print image information
+    if *verbose {
+        paletted, ok := img.(*image.Paletted)
+        if ok {
+            showPaletteInfo(out, paletted.Palette)
+        }
+    }
+
     // open outfile
     if out == nil {
         out, err = os.Create(out_name)
@@ -245,6 +338,7 @@ func main() {
 
     // resize
     new_img := resizer.ResizeNearestNeighbor()
+
 
     // output format selection
     if *outputType != "auto" {

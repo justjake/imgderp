@@ -43,7 +43,7 @@ func (r *Resizer) WidthForHeight(h int) int {
 
 
 // nearest neighbor image scaling
-func (r *Resizer) ResizeNearestNeighbor() image.Image {
+func (r *Resizer) ResizeNearestNeighbor() *image.RGBA {
     w, h := r.TargetWidth, r.TargetHeight
     older := r.Image
     bounds := older.Bounds()
@@ -54,9 +54,27 @@ func (r *Resizer) ResizeNearestNeighbor() image.Image {
     xFactor := float64(oldW) / float64(w)
     yFactor := float64(oldH) / float64(h)
 
-    newer := image.NewRGBA(image.Rect(0, 0, w, h))
+    X := int(float64(bounds.Min.X) / xFactor)
+    Y := int(float64(bounds.Min.Y) / yFactor)
+
+    newer := image.NewRGBA(image.Rect(X, Y, X+w, Y+h))
 
     // iterate over the new image, picking the nearest neighbor from the old image
+    for y := Y; y < Y+h; y++ {
+        guess_y := int(yFactor * float64(y)) + bounds.Min.Y
+        if guess_y > bounds.Max.Y {
+            guess_y = bounds.Max.Y
+        }
+        for x := X; x < X+w; x++ {
+            guess_x := int(xFactor * float64(x)) + bounds.Min.X
+            if guess_x > bounds.Max.X {
+                guess_x = bounds.Max.X
+            }
+            newer.Set(x, y, older.At(guess_x, guess_y))
+        }
+    }
+
+    /* // bounds-ignorant
     for x := 0; x <= w; x++ {
         guess_x := int(xFactor * float64(x)) + bounds.Min.X
         if guess_x > bounds.Max.X {
@@ -70,6 +88,7 @@ func (r *Resizer) ResizeNearestNeighbor() image.Image {
             newer.Set(x, y, older.At(guess_x, guess_y))
         }
     }
+    */
     return newer
 }
 
