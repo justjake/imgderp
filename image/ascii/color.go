@@ -19,8 +19,7 @@ type TextColor struct {
 }
 
 func (c *TextColor) RGBA() (r, g, b, a uint32) {
-    y := c.y
-    return y, y, y, 0xffff
+    return c.y, c.y, c.y, 0xffff
 }
 
 func (c *TextColor) String() string {
@@ -39,7 +38,7 @@ func Reverse(cs []*TextColor) []*TextColor {
 // color values per character are global, so overlapping palettes will break things
 // TODO: rework TextColor as a struct to do local lookups
 func MakeTextColors(chars ...rune) []*TextColor {
-    value := 255 / len(chars)
+    value := 255 / (len(chars))
 
     pal := make([]*TextColor, len(chars))
 
@@ -66,7 +65,7 @@ func NewPalette(p []*TextColor) color.Palette {
 var (
     DefaultSet      = MakeTextColors([]rune(" .:oO8@")...)
     AlternateSet    = MakeTextColors([]rune(" .:;+=xX$&")...)
-    SciSet          = MakeTextColors([]rune(" .,-+=:;/XHM%@#$")...)
+    SciSet          = MakeTextColors([]rune("  .,-+=:;/XHM%@#$$")...)
     UnicodeBoxSet   = MakeTextColors([]rune(" ▏▎▍▌▋▊")...)
     UnicodeShadeSet = MakeTextColors([]rune(" .░▒▓￭")...)
 )
