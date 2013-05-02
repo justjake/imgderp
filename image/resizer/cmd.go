@@ -228,6 +228,7 @@ func encodeFramesPipeline(g *gif.GIF, w, h int, pal []*ascii.TextColor) (frames 
     //     LoopCount int               // The loop count.
     // }
 const delayMultiplier = time.Second / 100
+
 func gifAnimate(out *os.File, g *gif.GIF, w, h int, pal []*ascii.TextColor) () {
     var frames [][]string
 
@@ -235,7 +236,7 @@ func gifAnimate(out *os.File, g *gif.GIF, w, h int, pal []*ascii.TextColor) () {
         encodeFramesSync(g, w, h, pal)
         encodeFramesPipeline(g, w, h, pal)
     } else {
-        frames = encodeFramesPipeline(g, w, h, pal)
+        frames = encodeFramesSync(g, w, h, pal)
         playback(out, g, frames)
     }
 
