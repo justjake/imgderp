@@ -14,6 +14,8 @@ import (
     "image/png"
     "image/gif"
     "time" // gif playback
+    "runtime/pprof" // cpu profiling
+    "log" // TODO: switch most fmt.Fprintf(os.Stderr ... to log.
 )
 
 var charsets =  map[string][]*ascii.TextColor {
@@ -36,7 +38,7 @@ var (
     charSetName = flag.String("set", "default", "Charset to use for -ft=txt if -chars is unset. Values: default, box")
     invertCharSet = flag.Bool("invert", false, "Reverse the ordering of the charset. Useful for dark-on-light output")
     verbose = flag.Bool("v", false, "Print info about the operation and image")
-    profile = flag.Bool("profile", false, "Do animated GIF profiling steps")
+    profile = flag.String("profile", "", "Do animated GIF profiling steps, and write CPU profile to -profile $FILE")
 )
 
 func init() {
@@ -155,7 +157,7 @@ func encodeFramesSync(g *gif.GIF, w, h int, pal []*ascii.TextColor) (frames [][]
         }
     }
 
-    if *verbose || *profile {
+    if *verbose || *profile != "" {
         fmt.Fprintf(os.Stderr, "Rendered %d frames in %v seconds (%d FPS, SYNC)\n", len(g.Image), time.Since(ts), int(time.Since(ts)) / len(g.Image))
     }
 
@@ -212,7 +214,7 @@ func encodeFramesPipeline(g *gif.GIF, w, h int, pal []*ascii.TextColor) (frames 
     close(resizedFrames)
     <-done
 
-    if *verbose || *profile {
+    if *verbose || *profile != "" {
         fmt.Fprintf(os.Stderr, "Rendered %d frames in %v seconds (%d FPS, ASYNC)\n", bufferSize, time.Since(ts), int(time.Since(ts)) / bufferSize)
     }
 
@@ -229,7 +231,7 @@ const delayMultiplier = time.Second / 100
 func gifAnimate(out *os.File, g *gif.GIF, w, h int, pal []*ascii.TextColor) () {
     var frames [][]string
 
-    if *profile {
+    if *profile != "" {
         encodeFramesSync(g, w, h, pal)
         encodeFramesPipeline(g, w, h, pal)
     } else {
@@ -345,10 +347,20 @@ func showPaletteInfo(o *os.File, p color.Palette) {
 
 
 func main() {
-    // parse args
     flag.Parse()
-    args := flag.Args()
 
+    // FIRST - engage profiling if required
+    if *profile != "" {
+        proFILE, err := os.Create(*profile)
+        if err != nil {
+            log.Fatal(err)
+        }
+        pprof.StartCPUProfile(proFILE)
+        defer pprof.StopCPUProfile()
+    }
+
+    // parse and handle arguments
+    args := flag.Args()
     var (
         in  *os.File 
         out *os.File
@@ -371,8 +383,6 @@ func main() {
         out_name = args[1]
     }
 
-
-    // parse args
     if *useTextPixelRatio {
         *pixelRatio = ascii.TextPixelRatio
     }

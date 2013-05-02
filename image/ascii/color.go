@@ -15,11 +15,11 @@ import (
 // type TextColor rune
 type TextColor struct {
     Rune        rune
-    lookupTable *map[rune]uint32
+    y           uint32
 }
 
 func (c *TextColor) RGBA() (r, g, b, a uint32) {
-    y := (*c.lookupTable)[c.Rune]
+    y := c.y
     return y, y, y, 0xffff
 }
 
@@ -41,14 +41,12 @@ func Reverse(cs []*TextColor) []*TextColor {
 func MakeTextColors(chars ...rune) []*TextColor {
     value := 255 / len(chars)
 
-    txtPalleteMap := make(map[rune]uint32, len(chars))
     pal := make([]*TextColor, len(chars))
 
     for i, r := range chars {
-        txtPalleteMap[r] = uint32(i * value)
-        txtPalleteMap[r] |= txtPalleteMap[r] << 8
-
-        c := TextColor{r, &txtPalleteMap}
+        y := uint32(i * value)
+        y |= y << 8
+        c := TextColor{r, y}
         pal[i] = &c
     }
 
