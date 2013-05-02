@@ -91,6 +91,29 @@ func Convert(m image.Image, p []*TextColor) *Image {
     return img
 }
 
+// convert an image into ASCII synchronously
+func ConvertSync(m image.Image, p []*TextColor) *Image {
+
+    c := NewPalette(p)
+
+    // create image of correct size
+    bounds := m.Bounds()
+    s := bounds.Size()
+    img := NewImage(uint(s.X),
+        uint(s.Y))
+
+    // dereference for slice manipulation
+    grid := *img
+    for y := range grid {
+        func(r []*TextColor, y int) {
+            for x := range r {
+                r[x] = c.Convert(m.At(x+bounds.Min.X, y+bounds.Min.Y)).(*TextColor)
+            }
+        }(grid[y], y)
+    }
+    return img
+}
+
 // And encoding, oh ho!
 // possibly the worst way to write this
 func Encode(w io.Writer, m image.Image, s []*TextColor) error {

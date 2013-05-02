@@ -36,6 +36,7 @@ var (
     charSetName = flag.String("set", "default", "Charset to use for -ft=txt if -chars is unset. Values: default, box")
     invertCharSet = flag.Bool("invert", false, "Reverse the ordering of the charset. Useful for dark-on-light output")
     verbose = flag.Bool("v", false, "Print info about the operation and image")
+    profile = flag.Bool("profile", false, "Do animated GIF profiling steps")
 )
 
 func init() {
@@ -79,6 +80,145 @@ func copyImageOver (base *image.RGBA, newer image.Image)  {
     }
 }
 
+
+
+// gif playback steps
+func resizeStep(w, h int, in, out chan image.Image) {
+    for {
+        img := <-in
+        out <- (&resize.Resizer{img, w, h}).ResizeNearestNeighbor()
+    }
+}
+
+func asciiStep(pal []*ascii.TextColor, in chan image.Image, out chan *ascii.Image) {
+    i := 0
+    for img := range in {
+        out <- ascii.ConvertSync(img, pal)
+        if *verbose {
+            fmt.Fprintf(os.Stderr, "Converted frame %d to ASCII\n", i)
+            i++
+        }
+    }
+    if *verbose {
+        fmt.Fprintf(os.Stderr, "Done ASCIIing %d frames\n", i)
+    }
+    close(out)
+}
+
+func stringify(img *ascii.Image, index int,  store [][]string) {
+        strings := make([]string, len(*img))
+        for k := range strings {
+            strings[k] = img.StringLine(k)
+        }
+        store[index] = strings
+    }
+
+func stringsStep(in chan *ascii.Image, out [][]string, done chan bool) {
+    i := 0
+    for img := range in {
+        stringify(img, i, out)
+        if *verbose {
+            fmt.Fprintf(os.Stderr, "Finished encoding frame %d (ASYNC)\n", i)
+            i++
+        }
+    }
+    done <- true
+}
+
+func encodeFramesSync(g *gif.GIF, w, h int, pal []*ascii.TextColor) (frames [][]string) {
+    frames = make([][]string, len(g.Image))
+
+    // set up frame accumulator
+    originalBounds := g.Image[0].Bounds()
+    compiledImage := image.NewRGBA(originalBounds)
+    copyImageOver(compiledImage, g.Image[0])
+
+    // timestamp!
+    ts := time.Now()
+
+    for i, frame := range g.Image {
+        // copy the current frame over the previous frame
+        copyImageOver(compiledImage, frame)
+
+        // resize
+        smallFrame := (&resize.Resizer{compiledImage, w, h}).ResizeNearestNeighbor()
+
+        // convert to ascii
+        textImage := ascii.ConvertSync(smallFrame, pal)
+
+        // convert to []string and store
+        stringify(textImage, i, frames)
+
+        // print status info if done
+        if *verbose {
+            fmt.Fprintf(os.Stderr, "Finished encoding frame %d (SYNC)\n", i)
+        }
+    }
+
+    if *verbose {
+        fmt.Fprintf(os.Stderr, "Rendered %d frames in %v seconds (%d FPS, SYNC)", len(g.Image), time.Since(ts), int(time.Since(ts)) / len(g.Image))
+    }
+
+    return
+}
+
+func encodeFramesPipeline(g *gif.GIF, w, h int, pal []*ascii.TextColor) (frames [][]string) {
+    frames = make([][]string, len(g.Image))
+
+    // set up frame accumulator
+    originalBounds := g.Image[0].Bounds()
+    compiledImage := image.NewRGBA(originalBounds)
+    copyImageOver(compiledImage, g.Image[0])
+
+    // set up channels for processing pipeline
+    bufferSize := len(g.Image)
+    // cant do resizing on own thread because things will copy over the 
+    // acucmulator image
+    //fullFrames := make(chan image.Image, bufferSize)
+    resizedFrames := make(chan image.Image, bufferSize)
+    asciiFrames := make(chan *ascii.Image, bufferSize)
+    done := make(chan bool)
+
+    // wait for all images to be processed
+    var pipelineFinished sync.WaitGroup
+    pipelineFinished.Add(bufferSize)
+
+    // start goroutines in processing pipeline
+    go asciiStep(pal, resizedFrames, asciiFrames)
+    go stringsStep(asciiFrames, frames, done)
+
+    // timestamp!
+    ts := time.Now()
+
+    for i, frame := range g.Image {
+        // copy the current frame over the previous frame
+        copyImageOver(compiledImage, frame)
+
+        // resize then inject into pipeline
+        curFrame := (&resize.Resizer{compiledImage, w, h}).ResizeNearestNeighbor()
+        resizedFrames <- curFrame
+
+        // print status info if done
+        if *verbose {
+            fmt.Fprintf(os.Stderr, "Finished shrinking frame %d\n", i)
+        }
+    }
+
+    if *verbose {
+        fmt.Fprintf(os.Stderr, "About to wait for %d frames to render\n", bufferSize)
+    }
+
+    // wait for the pipeline
+    close(resizedFrames)
+    <-done
+
+    if *verbose {
+        fmt.Fprintf(os.Stderr, "Rendered %d frames in %v seconds (%d FPS, ASYNC)", bufferSize, time.Since(ts), int(time.Since(ts)) / bufferSize)
+    }
+
+    return
+}
+
 // working with animated gifs:
     // type GIF struct {
     //     Image     []*image.Paletted // The successive images.
@@ -87,50 +227,16 @@ func copyImageOver (base *image.RGBA, newer image.Image)  {
     // }
 const delayMultiplier = time.Second / 100
 func gifAnimate(out *os.File, g *gif.GIF, w, h int, pal []*ascii.TextColor) () {
-    // first convert every gif image into a txt image
-    resized := make([][]string, len(g.Image))
+    var frames [][]string
 
-    originalBounds := g.Image[0].Bounds()
-    originalSize := originalBounds.Size()
-
-    compiledImage := image.NewRGBA(originalBounds)
-    copyImageOver(compiledImage, g.Image[0])
-
-    // TODO: copy forward the first frame, overlaying the later frames
-    // copy under is a gross hack and obvs. not working
-    for i, frame := range g.Image {
-        // gif frames are diffs, this expands to whole images
-        // compute intended w/h for this one
-        // because we'll get streatch sub regiions otherwise
-        curFrameOrigSize := frame.Bounds().Size()
-        scaleX := float64(curFrameOrigSize.X) / float64(originalSize.X)
-        scaleY := float64(curFrameOrigSize.Y) / float64(originalSize.Y)
-
-        // computed target w/h for this frame
-        W := int(float64(w) * scaleX)
-        H := int(float64(h) * scaleY)
-
-        // copy the current frame over the previous frame
-        curFrame := (&resize.Resizer{frame, W, H}).ResizeNearestNeighbor()
-        copyImageOver(compiledImage, curFrame)
-
-        // convert image to string in seperate thread
-        textImage := ascii.Convert(compiledImage, pal)
-        // convert ascii.Image to []string
-        strings := make([]string, len(*textImage))
-        for k := range strings {
-            strings[k] = textImage.StringLine(k)
-        }
-        // save conversion
-        resized[i] = strings
+    if *profile {
+        encodeFramesSync(g, w, h, pal)
+        encodeFramesPipeline(g, w, h, pal)
+    } else {
+        frames = encodeFramesPipeline(g, w, h, pal)
+        playback(out, g, frames)
     }
 
-    // TODO: deal with registration/transparency color
-    // TODO: deal with GIFs that have a frame delay of 0
-
-    // threaded playback
-    playback(out, g, resized)
-    playbackThreaded(out, g, resized)
 }
 
 // TODO: interlace 60fps
