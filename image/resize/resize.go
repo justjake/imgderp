@@ -8,7 +8,9 @@ import (
 type Resizer struct {
     Image image.Image
     TargetWidth int
-    TargetHeight int
+    TargetHeight  int
+    TargetX int
+    TargetY int
 }
 
 // To re-scale in one line:
@@ -41,6 +43,23 @@ func (r *Resizer) WidthForHeight(h int) int {
     return int(float64(W) * scale)
 }
 
+func rectContains(rect *image.Rectangle, x, y int) bool {
+    return x <= rect.Max.X && x >= rect.Min.X && y <= rect.Max.Y && y >= rect.Min.Y
+}
+
+func max(a, b int) int {
+    if a > b {
+        return a
+    }
+    return b
+}
+func min(a, b int) int {
+    if a < b {
+        return a
+    }
+    return b
+}
+
 
 // nearest neighbor image scaling
 func (r *Resizer) ResizeNearestNeighbor() *image.RGBA {
@@ -48,28 +67,26 @@ func (r *Resizer) ResizeNearestNeighbor() *image.RGBA {
     older := r.Image
     bounds := older.Bounds()
     oldW, oldH := bounds.Size().X, bounds.Size().Y
-    /*bounds.Max.X - bounds.Min.X*/
-    /*oldH := bounds.Max.Y - bounds.Min.Y*/
 
     xFactor := float64(oldW) / float64(w)
     yFactor := float64(oldH) / float64(h)
 
-    X := int(float64(bounds.Min.X) / xFactor)
-    Y := int(float64(bounds.Min.Y) / yFactor)
+    X := r.TargetX
+    Y := r.TargetY
 
     newer := image.NewRGBA(image.Rect(X, Y, X+w, Y+h))
 
     // iterate over the new image, picking the nearest neighbor from the old image
     for y := Y; y < Y+h; y++ {
-        guess_y := int(yFactor * float64(y)) + bounds.Min.Y
-        if guess_y > bounds.Max.Y {
-            guess_y = bounds.Max.Y
-        }
+        guess_y := int(yFactor * float64(y))
+        // clip to bounds
+        guess_y = min(guess_y, bounds.Max.Y)
+        guess_y = max(guess_y, bounds.Min.Y)
         for x := X; x < X+w; x++ {
-            guess_x := int(xFactor * float64(x)) + bounds.Min.X
-            if guess_x > bounds.Max.X {
-                guess_x = bounds.Max.X
-            }
+            guess_x := int(xFactor * float64(x))
+            guess_x = min(guess_x, bounds.Max.X)
+            guess_x = max(guess_x, bounds.Min.X)
+            // copy over color value
             newer.Set(x, y, older.At(guess_x, guess_y))
         }
     }
@@ -95,6 +112,6 @@ func (r *Resizer) ResizeNearestNeighbor() *image.RGBA {
 // if you want to scale just for pixel ratio, or scale down
 // based on width
 func NewResizer(pic image.Image) *Resizer {
-    size := pic.Bounds().Size()
-    return &Resizer{pic, size.X, size.Y}
+    bounds := pic.Bounds()
+    return &Resizer{pic, bounds.Dx(), bounds.Dy(), bounds.Min.X, bounds.Min.Y}
 }

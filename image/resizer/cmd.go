@@ -1,10 +1,8 @@
 package main
 
 import (
-    "sync"
     "flag"
     "os"
-    "io"
     "fmt"
     "github.com/justjake/imgtagger/image/resize"
     "github.com/justjake/imgtagger/image/ascii" // lel
@@ -13,7 +11,6 @@ import (
     "image/jpeg"
     "image/png"
     "image/gif"
-    "time" // gif playback
     "runtime/pprof" // cpu profiling
     "log" // TODO: switch most fmt.Fprintf(os.Stderr ... to log.
 )
@@ -39,6 +36,7 @@ var (
     invertCharSet = flag.Bool("invert", false, "Reverse the ordering of the charset. Useful for dark-on-light output")
     verbose = flag.Bool("v", false, "Print info about the operation and image")
     profile = flag.String("profile", "", "Do animated GIF profiling steps, and write CPU profile to -profile $FILE")
+    fdebug  = flag.Int("fdebug", -1, "Debug compiling this frame by printing a preview to stderr, then writing the file to TARGET")
 )
 
 func init() {
@@ -63,244 +61,6 @@ func init() {
   # resize screenshot.png to 500px wide, and save as a JPEG
   %s -ft=jpg -w=500 ~/Pictures/screenshot.png ~/public_html/images/screenshot.jpg
 `, os.Args[0], os.Args[0])
-    }
-}
-
-
-// copy a semi-trasparent image over another image in-place
-func copyImageOver (base *image.RGBA, newer image.Image)  {
-    // points outside of the base bounds will not be copied
-    b := base.Bounds().Intersect(newer.Bounds())
-    for y := b.Min.Y; y < b.Max.Y; y++ {
-        for x := b.Min.X; x < b.Max.X; x++ {
-            // copy over non-transparent pixels
-            px := newer.At(x, y)
-            if _, _, _, a:= px.RGBA(); a != 0 {
-                base.Set(x, y, px)
-            }
-        }
-    }
-}
-
-
-
-// gif playback steps
-func resizeStep(w, h int, in, out chan image.Image) {
-    for {
-        img := <-in
-        out <- (&resize.Resizer{img, w, h}).ResizeNearestNeighbor()
-    }
-}
-
-func asciiStep(pal []*ascii.TextColor, in chan image.Image, out chan *ascii.Image) {
-    i := 0
-    for img := range in {
-        out <- ascii.ConvertSync(img, pal)
-        if *verbose {
-            fmt.Fprintf(os.Stderr, "Converted frame %d to ASCII\n", i)
-            i++
-        }
-    }
-    if *verbose {
-        fmt.Fprintf(os.Stderr, "Done ASCIIing %d frames\n", i)
-    }
-    close(out)
-}
-
-func stringify(img *ascii.Image, index int,  store [][]string) {
-        strings := make([]string, len(*img))
-        for k := range strings {
-            strings[k] = img.StringLine(k)
-        }
-        store[index] = strings
-    }
-
-func stringsStep(in chan *ascii.Image, out [][]string, done chan bool) {
-    i := 0
-    for img := range in {
-        stringify(img, i, out)
-        if *verbose {
-            fmt.Fprintf(os.Stderr, "Finished encoding frame %d (ASYNC)\n", i)
-            i++
-        }
-    }
-    done <- true
-}
-
-func encodeFramesSync(g *gif.GIF, w, h int, pal []*ascii.TextColor) (frames [][]string) {
-    frames = make([][]string, len(g.Image))
-
-    // set up frame accumulator
-    originalBounds := g.Image[0].Bounds()
-    compiledImage := image.NewRGBA(originalBounds)
-    copyImageOver(compiledImage, g.Image[0])
-
-    // timestamp!
-    ts := time.Now()
-
-    for i, frame := range g.Image {
-        // copy the current frame over the previous frame
-        copyImageOver(compiledImage, frame)
-
-        // resize
-        smallFrame := (&resize.Resizer{compiledImage, w, h}).ResizeNearestNeighbor()
-
-        // convert to ascii
-        textImage := ascii.ConvertSync(smallFrame, pal)
-
-        // convert to []string and store
-        stringify(textImage, i, frames)
-
-        // print status info if done
-        if *verbose {
-            fmt.Fprintf(os.Stderr, "Finished encoding frame %d (SYNC)\n", i)
-        }
-    }
-
-    if *verbose || *profile != "" {
-        fmt.Fprintf(os.Stderr, "Rendered %d frames in %v seconds (%d FPS, SYNC)\n", len(g.Image), time.Since(ts), int(time.Since(ts)) / len(g.Image))
-    }
-
-    return
-}
-
-func encodeFramesPipeline(g *gif.GIF, w, h int, pal []*ascii.TextColor) (frames [][]string) {
-    frames = make([][]string, len(g.Image))
-
-    // set up frame accumulator
-    originalBounds := g.Image[0].Bounds()
-    compiledImage := image.NewRGBA(originalBounds)
-    copyImageOver(compiledImage, g.Image[0])
-
-    // set up channels for processing pipeline
-    bufferSize := len(g.Image)
-    // cant do resizing on own thread because things will copy over the 
-    // acucmulator image
-    //fullFrames := make(chan image.Image, bufferSize)
-    resizedFrames := make(chan image.Image, bufferSize)
-    asciiFrames := make(chan *ascii.Image, bufferSize)
-    done := make(chan bool)
-
-    // wait for all images to be processed
-    var pipelineFinished sync.WaitGroup
-    pipelineFinished.Add(bufferSize)
-
-    // start goroutines in processing pipeline
-    go asciiStep(pal, resizedFrames, asciiFrames)
-    go stringsStep(asciiFrames, frames, done)
-
-    // timestamp!
-    ts := time.Now()
-
-    for i, frame := range g.Image {
-        // copy the current frame over the previous frame
-        copyImageOver(compiledImage, frame)
-
-        // resize then inject into pipeline
-        curFrame := (&resize.Resizer{compiledImage, w, h}).ResizeNearestNeighbor()
-        resizedFrames <- curFrame
-
-        // print status info if done
-        if *verbose {
-            fmt.Fprintf(os.Stderr, "Finished shrinking frame %d\n", i)
-        }
-    }
-
-    if *verbose {
-        fmt.Fprintf(os.Stderr, "About to wait for %d frames to render\n", bufferSize)
-    }
-
-    // wait for the pipeline
-    close(resizedFrames)
-    <-done
-
-    if *verbose || *profile != "" {
-        fmt.Fprintf(os.Stderr, "Rendered %d frames in %v seconds (%d FPS, ASYNC)\n", bufferSize, time.Since(ts), int(time.Since(ts)) / bufferSize)
-    }
-
-    return
-}
-
-// working with animated gifs:
-    // type GIF struct {
-    //     Image     []*image.Paletted // The successive images.
-    //     Delay     []int             // The successive delay times, one per frame, in 100ths of a second.
-    //     LoopCount int               // The loop count.
-    // }
-const delayMultiplier = time.Second / 100
-
-func gifAnimate(out *os.File, g *gif.GIF, w, h int, pal []*ascii.TextColor) () {
-    var frames [][]string
-
-    if *profile != "" {
-        encodeFramesSync(g, w, h, pal)
-        encodeFramesPipeline(g, w, h, pal)
-    } else {
-        frames = encodeFramesSync(g, w, h, pal)
-        playback(out, g, frames)
-    }
-
-}
-
-// TODO: interlace 60fps
-func playbackThreaded(out *os.File, g *gif.GIF, frames [][]string) {
-    abort := new(bool)
-    *abort = false
-    var writeLock sync.Mutex
-    for {
-        for i, frame := range frames {
-            go showFrame(out, frame, abort, writeLock)
-            if *verbose {
-                fmt.Fprintf(out, " frame %s\n", i)
-            }
-            time.Sleep(delayMultiplier * time.Duration(g.Delay[i]))
-            *abort = true
-        }
-    }
-}
-
-func playback(out *os.File, g *gif.GIF, frames [][]string) {
-    abort := new(bool)
-    *abort = false
-    var writeLock sync.Mutex
-    for {
-        for i, frame := range frames {
-            showFrame(out, frame, abort, writeLock)
-            if *verbose {
-                fmt.Fprintf(out, " frame %d\n", i) 
-                // showPaletteInfo(out, g.Image[i].Palette)
-                fmt.Fprintln(out, g.Image[i].Bounds())
-            }
-            if delay := g.Delay[i]; delay == 0 {
-                time.Sleep(delayMultiplier)
-            } else {
-                time.Sleep(delayMultiplier * time.Duration(delay))
-            }
-
-            *abort = true
-        }
-    }
-}
-
-
-// clears the terminal then prints s
-func showFrame(out io.Writer, f []string, quit *bool, m sync.Mutex) {
-    // don't output when another frame is in the pipeline
-    m.Lock()
-    defer m.Unlock()
-    *quit = false
-
-    // clear screen
-    fmt.Fprintln(out, "\033[2J")
-    // print lines
-    for _, line := range f {
-        switch *quit {
-        case true:
-            // out of time. die
-            return
-        default:
-            fmt.Fprintln(out, line)
-        }
     }
 }
 
@@ -345,6 +105,59 @@ func showPaletteInfo(o *os.File, p color.Palette) {
     }
 }
 
+func writeOutput(ft string, img image.Image) {
+    out, err := getOutputFile()
+    if err != nil {
+        log.Fatal(err)
+    }
+
+    // encode
+    switch ft {
+        // use lossless PNG for GIFs and other fts.
+    default:
+        err = png.Encode(out, img)
+    case "jpg":
+        err = jpeg.Encode(out, img, &jpeg.Options{90})
+    case "txt":
+        // set up the character encoding
+        colors := getColors()
+
+        // write out the text
+        err = ascii.Encode(out, img, colors)
+    }
+
+    if err != nil {
+        log.Fatal(err)
+    }
+}
+
+func getOutputFile() (*os.File, error) {
+    args := flag.Args()
+    if len(args) < 2 {
+        return os.Stdout, nil
+    }
+
+    fn := args[1]
+    out, err := os.Create(fn)
+    if err != nil {
+        return nil, err
+    }
+    return out, nil
+}
+
+func getInputFile() (*os.File, error) {
+    args := flag.Args()
+    if len(args) == 0 {
+        return os.Stdin, nil
+    }
+
+    fn := args[0]
+    out, err := os.Open(fn)
+    if err != nil {
+        return nil, err
+    }
+    return out, nil
+}
 
 
 func main() {
@@ -361,26 +174,10 @@ func main() {
     }
 
     // parse and handle arguments
+    var in, out *os.File
+    var out_name string
     args := flag.Args()
-    var (
-        in  *os.File 
-        out *os.File
-        err error
-
-        in_name string
-        out_name string
-    )
-
-    switch len(args) {
-    case 0:
-        // stdin -> stdout
-        in = os.Stdin
-        out = os.Stdout
-    case 1:
-        out = os.Stdout
-        in_name = args[0]
-    case 2:
-        in_name = args[0]
+    if len(args) >= 2 {
         out_name = args[1]
     }
 
@@ -391,15 +188,11 @@ func main() {
     h := *targetHeight
 
     // open infile
-    if in == nil {
-        in, err = os.Open(in_name)
-        if err != nil {
-            fmt.Fprintln(os.Stderr, err)
-            return
-        }
+    in, err := getInputFile()
+    if err != nil {
+        log.Fatal(err)
     }
     defer in.Close()
-
 
     // CHOO CHOO STOP HERE AND ANIMATE GIFS IF THATS WHAT WE DO
     if *animate {
@@ -411,8 +204,15 @@ func main() {
 
         // determine image size
         r := userResizer(decoded.Image[0], w, h)
-        gifAnimate(os.Stdout, decoded, r.TargetWidth , r.TargetHeight, getColors())
-        return
+        if *fdebug < 0 {
+            gifAnimate(os.Stdout, decoded, r.TargetWidth , r.TargetHeight, getColors())
+            return
+        } else {
+            // debug frame data
+            frame := testEncode(decoded, *fdebug, r.TargetWidth, r.TargetHeight, getColors())
+            writeOutput("png", frame)
+            return
+        }
     }
 
     // decode image
@@ -430,15 +230,6 @@ func main() {
         }
     }
 
-    // open outfile
-    if out == nil {
-        out, err = os.Create(out_name)
-        if err != nil {
-            fmt.Fprintln(os.Stderr, err)
-            return
-        }
-    }
-    defer out.Close()
 
     // setup resizer to the correct height
     resizer := userResizer(img, w, h)
@@ -462,24 +253,7 @@ func main() {
         ft = *outputType
     }
 
-    // encode
-    switch ft {
-        // use lossless PNG for GIFs and other fts.
-    default:
-        err = png.Encode(out, new_img)
-    case "jpg":
-        err = jpeg.Encode(out, new_img, &jpeg.Options{90})
-    case "txt":
-        // set up the character encoding
-        colors := getColors()
-
-        // write out the text
-        err = ascii.Encode(out, new_img, colors)
-    }
-
-    if err != nil {
-        fmt.Fprintln(os.Stderr, err)
-    }
+    writeOutput(ft, new_img)
 }
 
 
