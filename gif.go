@@ -55,51 +55,13 @@ func copyImageOver (base *image.RGBA, newer image.Image)  {
     }
 }
 
-
-// gif playback steps
-func resizeStep(w, h int, in, out chan image.Image) {
-    for {
-        img := <-in
-        out <- (&resize.Resizer{img, w, h, 0, 0}).ResizeNearestNeighbor()
-    }
-}
-
-func asciiStep(pal []*ascii.TextColor, in chan image.Image, out chan *ascii.Image) {
-    i := 0
-    for img := range in {
-        out <- ascii.ConvertSync(img, pal)
-        if *verbose {
-            fmt.Fprintf(os.Stderr, "Converted frame %d to ASCII\n", i)
-            i++
-        }
-    }
-    if *verbose {
-        fmt.Fprintf(os.Stderr, "Done ASCIIing %d frames\n", i)
-    }
-    close(out)
-}
-
-func stringify(img *ascii.Image, index int,  store [][]string) {
+func stringify(img *ascii.Image) []string {
     strings := make([]string, len(*img))
     for k := range strings {
         strings[k] = img.StringLine(k)
     }
-    store[index] = strings
+    return strings
 }
-
-func stringsStep(in chan *ascii.Image, out [][]string, done chan bool) {
-    i := 0
-    for img := range in {
-        stringify(img, i, out)
-        if *verbose {
-            fmt.Fprintf(os.Stderr, "Finished encoding frame %d (ASYNC)\n", i)
-            i++
-        }
-    }
-    done <- true
-}
-
-
 
 func encodeFramesSync(g *gif.GIF, w, h int, pal []*ascii.TextColor) (frames [][]string) {
     frames = make([][]string, len(g.Image))
@@ -126,7 +88,7 @@ func encodeFramesSync(g *gif.GIF, w, h int, pal []*ascii.TextColor) (frames [][]
         textImage := ascii.ConvertSync(compiledImage, pal)
 
         // convert to []string and store
-        stringify(textImage, i, frames)
+        frames[i] = stringify(textImage)
 
         // print status info if done
         if *verbose {
@@ -157,62 +119,6 @@ func shrinkFrameToCorrectSize(frame image.Image, w, h int, firstBounds *image.Re
     return s.ResizeNearestNeighbor()
 }
 
-func encodeFramesPipeline(g *gif.GIF, w, h int, pal []*ascii.TextColor) (frames [][]string) {
-    frames = make([][]string, len(g.Image))
-
-    // set up frame accumulator
-    originalBounds := g.Image[0].Bounds()
-    compiledImage := image.NewRGBA(originalBounds)
-    copyImageOver(compiledImage, g.Image[0])
-
-    // set up channels for processing pipeline
-    bufferSize := len(g.Image)
-    // cant do resizing on own thread because things will copy over the
-    // acucmulator image
-    //fullFrames := make(chan image.Image, bufferSize)
-    resizedFrames := make(chan image.Image, bufferSize)
-    asciiFrames := make(chan *ascii.Image, bufferSize)
-    done := make(chan bool)
-
-    // wait for all images to be processed
-    var pipelineFinished sync.WaitGroup
-    pipelineFinished.Add(bufferSize)
-
-    // start goroutines in processing pipeline
-    go asciiStep(pal, resizedFrames, asciiFrames)
-    go stringsStep(asciiFrames, frames, done)
-
-    // timestamp!
-    ts := time.Now()
-
-    for i, frame := range g.Image {
-        // copy the current frame over the previous frame
-        copyImageOver(compiledImage, frame)
-
-        // resize then inject into pipeline
-        curFrame := (&resize.Resizer{compiledImage, w, h, 0, 0}).ResizeNearestNeighbor()
-        resizedFrames <- curFrame
-
-        // print status info if done
-        if *verbose {
-            fmt.Fprintf(os.Stderr, "Finished shrinking frame %d\n", i)
-        }
-    }
-
-    if *verbose {
-        fmt.Fprintf(os.Stderr, "Waiting for %d frames to render\n", bufferSize)
-    }
-
-    // wait for the pipeline
-    close(resizedFrames)
-    <-done
-
-    if *verbose || *profile != "" {
-        fmt.Fprintf(os.Stderr, "Rendered %d frames in %v seconds (%d FPS, ASYNC)\n", bufferSize, time.Since(ts), int(time.Since(ts)) / bufferSize)
-    }
-
-    return
-}
 
 // working with animated gifs:
     // type GIF struct {
@@ -226,29 +132,11 @@ func gifAnimate(out *os.File, g *gif.GIF, w, h int, pal []*ascii.TextColor) () {
 
     if *profile != "" {
         encodeFramesSync(g, w, h, pal)
-        encodeFramesPipeline(g, w, h, pal)
     } else {
         frames = encodeFramesSync(g, w, h, pal)
         playback(out, g, frames)
     }
 
-}
-
-// TODO: interlace 60fps
-func playbackThreaded(out *os.File, g *gif.GIF, frames [][]string) {
-    abort := new(bool)
-    *abort = false
-    var writeLock sync.Mutex
-    for {
-        for i, frame := range frames {
-            go showFrame(out, frame, abort, writeLock)
-            if *verbose {
-                fmt.Fprintf(out, " frame %s\n", i)
-            }
-            time.Sleep(delayMultiplier * time.Duration(g.Delay[i]))
-            *abort = true
-        }
-    }
 }
 
 func playback(out *os.File, g *gif.GIF, frames [][]string) {
@@ -274,7 +162,6 @@ func playback(out *os.File, g *gif.GIF, frames [][]string) {
     }
 }
 
-
 // clears the terminal then prints s
 func showFrame(out io.Writer, f []string, quit *bool, m sync.Mutex) {
     // don't output when another frame is in the pipeline
@@ -295,5 +182,3 @@ func showFrame(out io.Writer, f []string, quit *bool, m sync.Mutex) {
         }
     }
 }
-
-
