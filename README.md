@@ -1,8 +1,12 @@
-# Imgtagger
+# imgderp
 
 I'm just learning static programming here, cut me some slack.
 
-## `image/resizer`
+- nearest-neighbor image resizing
+- automatically preserve ratio if width or height is unspecified
+- convert images to ascii, optionally using custom palettes
+- play back animated gifs in the terminal
 
-Basic nearest-neighbor image resizing. Even detects the correct height
-from an image if given only the target width!!!! #features
+## how 2 install
+
+It's go! so ez. `go get github.com/justjake/imgderp`
