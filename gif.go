@@ -6,8 +6,8 @@ import (
     "os"
     "io"
     "fmt"
-    "github.com/justjake/imgtagger/image/resize"
-    "github.com/justjake/imgtagger/image/ascii" // lel
+    "github.com/justjake/imgderp/resize"
+    "github.com/justjake/imgderp/ascii" // lel
     "image"
     "image/color"
     "image/gif"
@@ -167,7 +167,7 @@ func encodeFramesPipeline(g *gif.GIF, w, h int, pal []*ascii.TextColor) (frames 
 
     // set up channels for processing pipeline
     bufferSize := len(g.Image)
-    // cant do resizing on own thread because things will copy over the 
+    // cant do resizing on own thread because things will copy over the
     // acucmulator image
     //fullFrames := make(chan image.Image, bufferSize)
     resizedFrames := make(chan image.Image, bufferSize)
@@ -259,7 +259,7 @@ func playback(out *os.File, g *gif.GIF, frames [][]string) {
         for i, frame := range frames {
             showFrame(out, frame, abort, writeLock)
             if *verbose {
-                fmt.Fprintf(out, " frame %d\n", i) 
+                fmt.Fprintf(out, " frame %d\n", i)
                 // showPaletteInfo(out, g.Image[i].Palette)
                 fmt.Fprintln(out, g.Image[i].Bounds())
             }
