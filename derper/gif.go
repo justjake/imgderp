@@ -1,4 +1,4 @@
-package main
+package derper
 
 // This file handles animated GIF playback
 
@@ -14,6 +14,12 @@ import (
 	"sync"
 	"time" // gif playback
 )
+
+var verbose *bool = new(bool)
+
+func SetVerbose(verb bool) {
+	*verbose = verb
+}
 
 // Gif delay multiplier, in nanoseconds
 const delayMultiplier = time.Second / 100
@@ -56,14 +62,6 @@ func copyImageOver(base *image.RGBA, newer image.Image) {
 	}
 }
 
-func stringify(img *ascii.Image) []string {
-	strings := make([]string, len(*img))
-	for k := range strings {
-		strings[k] = img.StringLine(k)
-	}
-	return strings
-}
-
 func encodeFramesSync(g *gif.GIF, w, h int, pal []*ascii.TextColor) (frames [][]string) {
 	frames = make([][]string, len(g.Image))
 
@@ -89,7 +87,7 @@ func encodeFramesSync(g *gif.GIF, w, h int, pal []*ascii.TextColor) (frames [][]
 		textImage := ascii.ConvertSync(compiledImage, pal)
 
 		// convert to []string and store
-		frames[i] = stringify(textImage)
+		frames[i] = textImage.StringSlice()
 
 		// print status info if done
 		if *verbose {
@@ -97,7 +95,7 @@ func encodeFramesSync(g *gif.GIF, w, h int, pal []*ascii.TextColor) (frames [][]
 		}
 	}
 
-	if *verbose || *profile != "" {
+	if *verbose {
 		fmt.Fprintf(os.Stderr, "Rendered %d frames in %v seconds (%d FPS, SYNC)\n", len(g.Image), time.Since(ts), float64(time.Since(ts))/float64(len(g.Image)))
 	}
 
@@ -127,19 +125,7 @@ func shrinkFrameToCorrectSize(frame image.Image, w, h int, firstBounds *image.Re
 //     LoopCount int               // The loop count.
 // }
 
-func gifAnimate(out *os.File, g *gif.GIF, w, h int, pal []*ascii.TextColor) {
-	var frames [][]string
-
-	if *profile != "" {
-		encodeFramesSync(g, w, h, pal)
-	} else {
-		frames = encodeFramesSync(g, w, h, pal)
-		playback(out, g, frames)
-	}
-
-}
-
-func playback(out *os.File, g *gif.GIF, frames [][]string) {
+func Playback(out *os.File, g *gif.GIF, frames [][]string) {
 	abort := new(bool)
 	*abort = false
 	var writeLock sync.Mutex

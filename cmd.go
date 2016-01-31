@@ -4,24 +4,16 @@ import (
 	"flag"
 	"fmt"
 	"github.com/justjake/imgderp/ascii" // lel
-	"github.com/justjake/imgderp/resize"
+	"github.com/justjake/imgderp/derper"
 	"image"
 	"image/color"
 	"image/gif"
-	"image/jpeg"
-	"image/png"
+	_ "image/jpeg"
+	_ "image/png"
 	"log" // TODO: switch most fmt.Fprintf(os.Stderr ... to log.
 	"os"
 	"runtime/pprof" // cpu profiling
 )
-
-var charsets = map[string][]*ascii.TextColor{
-	"default": ascii.DefaultSet,
-	"box":     ascii.UnicodeBoxSet,
-	"alt":     ascii.AlternateSet,
-	"shade":   ascii.UnicodeShadeSet,
-	"new":     ascii.SciSet,
-}
 
 // params
 var (
@@ -43,7 +35,7 @@ func init() {
 	flag.Usage = func() {
 		// char sets
 		chars := ""
-		for n, s := range charsets {
+		for n, s := range derper.Charsets {
 			chars += fmt.Sprintf("  \"%s\" - %s\n", n, s)
 		}
 
@@ -63,40 +55,6 @@ func init() {
 	}
 }
 
-func getColors() []*ascii.TextColor {
-	var colors []*ascii.TextColor
-
-	// preset vs provided
-	if *charSet == "" {
-		colors = charsets[*charSetName]
-	} else {
-		colors = ascii.MakeTextColors([]rune(*charSet)...)
-	}
-
-	// flip charset for dark-on-light?
-	if *invertCharSet {
-		colors = ascii.Reverse(colors)
-	}
-	return colors
-}
-
-func userResizer(img image.Image, w, h int) *resize.Resizer {
-	resizer := resize.NewResizer(img)
-	if w == 0 && h == 0 {
-		w = 80
-	}
-	if h == 0 {
-		h = resizer.HeightForWidth(w)
-	}
-	if w == 0 {
-		w = resizer.WidthForHeight(h)
-	}
-	resizer.TargetWidth = w
-	resizer.TargetHeight = h
-	resizer.TargetHeight = resizer.HeightForPixelRatio(*pixelRatio)
-	return resizer
-}
-
 func showPaletteInfo(o *os.File, p color.Palette) {
 	for i, clr := range p {
 		r, g, b, a := clr.RGBA()
@@ -104,29 +62,17 @@ func showPaletteInfo(o *os.File, p color.Palette) {
 	}
 }
 
-func writeOutput(ft string, img image.Image) {
+func writeOutput(frames [][]string) {
 	out, err := getOutputFile()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// encode
-	switch ft {
-	// use lossless PNG for GIFs and other fts.
-	default:
-		err = png.Encode(out, img)
-	case "jpg":
-		err = jpeg.Encode(out, img, &jpeg.Options{90})
-	case "txt":
-		// set up the character encoding
-		colors := getColors()
-
-		// write out the text
-		err = ascii.Encode(out, img, colors)
-	}
-
-	if err != nil {
-		log.Fatal(err)
+	for _, frame := range frames {
+		fmt.Fprintln(out, "")
+		for _, line := range frame {
+			fmt.Fprintln(out, line)
+		}
 	}
 }
 
@@ -171,16 +117,26 @@ func main() {
 		defer pprof.StopCPUProfile()
 	}
 
+	// SECOND - set derper verbosity
+	derper.SetVerbose(*verbose)
+
 	// parse and handle arguments
 	var in, out *os.File
-	var out_name string
-	args := flag.Args()
-	if len(args) >= 2 {
-		out_name = args[1]
-	}
+	//var out_name string
+	//args := flag.Args()
+	//if len(args) >= 2 {
+	//out_name = args[1]
+	//}
 
-	w := *targetWidth
-	h := *targetHeight
+	var opts derper.Options = derper.Options{
+		TargetWidth:  *targetWidth,
+		TargetHeight: *targetHeight,
+		PixelRatio:   *pixelRatio,
+
+		CharSet:     *charSet,
+		CharSetName: *charSetName,
+		Invert:      *invertCharSet,
+	}
 
 	// open infile
 	in, err := getInputFile()
@@ -188,27 +144,6 @@ func main() {
 		log.Fatal(err)
 	}
 	defer in.Close()
-
-	// CHOO CHOO STOP HERE AND ANIMATE GIFS IF THATS WHAT WE DO
-	if *animate {
-		decoded, err := gif.DecodeAll(in)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Animated gif decoding error: %s\n", err)
-			return
-		}
-
-		// determine image size
-		r := userResizer(decoded.Image[0], w, h)
-		if *fdebug < 0 {
-			gifAnimate(os.Stdout, decoded, r.TargetWidth, r.TargetHeight, getColors())
-			return
-		} else {
-			// debug frame data
-			frame := testEncode(decoded, *fdebug, r.TargetWidth, r.TargetHeight, getColors())
-			writeOutput("png", frame)
-			return
-		}
-	}
 
 	// decode image
 	img, ft, err := image.Decode(in)
@@ -225,26 +160,48 @@ func main() {
 		}
 	}
 
-	// setup resizer to the correct height
-	resizer := userResizer(img, w, h)
+	var result [][]string
 
-	// note the operation
-	if *verbose {
-		fmt.Fprintf(os.Stderr, "Resizing image of type %s to [%d, %d] ", ft, w, h)
-		if len(out_name) > 0 {
-			fmt.Fprintf(os.Stderr, "at '%s'\n", out_name)
-		} else {
-			fmt.Fprintf(os.Stderr, "\n")
+	// handle gifs since they need to be decoded differently
+	if ft == "gif" {
+		in.Seek(0, 0)
+		gifs, err := gif.DecodeAll(in)
+
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Animated gif decoding error: %s\n", err)
+			return
 		}
+
+		// display the gif as an amination instead of writing it to the output file
+		if *animate {
+			gifAnimate(os.Stdout, gifs, &opts)
+			return
+		}
+
+		result = derper.DerpGif(gifs, &opts)
+	} else {
+		result = derper.Derp(img, &opts)
 	}
 
-	// resize
-	new_img := resizer.ResizeNearestNeighbor()
+	writeOutput(result)
 
-	// output format selection
-	if *outputType != "auto" {
-		ft = *outputType
+	// TODO: note the operation
+	// if *verbose {
+	// 	fmt.Fprintf(os.Stderr, "Resizing image of type %s to [%d, %d] ", ft, opts.targetWidth, opts.targetHeight)
+	// 	if len(out_name) > 0 {
+	// 		fmt.Fprintf(os.Stderr, "at '%s'\n", out_name)
+	// 	} else {
+	// 		fmt.Fprintf(os.Stderr, "\n")
+	// 	}
+	// }
+}
+
+func gifAnimate(out *os.File, g *gif.GIF, opts *derper.Options) {
+	frames := derper.DerpGif(g, opts)
+
+	if *profile != "" {
+		return
 	}
 
-	writeOutput(ft, new_img)
+	derper.Playback(out, g, frames)
 }
